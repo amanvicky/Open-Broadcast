@@ -1,38 +1,11 @@
-# Python
 __pycache__/
 *.pyc
 *.pyo
-*.pyd
-.Python
-*.egg-info/
-dist/
-build/
-*.spec
-
-# Environment
 .env
 .venv/
 venv/
-env/
-
-# IDE
 .vscode/
 .idea/
-*.swp
-*.swo
-
-# Data (large files - download separately)
-data/raw/
-data/processed/
-models/weights/*.onnx
-models/weights/*.task
-models/weights/*.bin
-models/weights/*.tflite
-
-# OS
 .DS_Store
 Thumbs.db
-desktop.ini
-
-# Logs
 *.log
