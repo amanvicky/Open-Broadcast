@@ -1,0 +1,124 @@
+╔════════════════════════════════════════════════════════════╗
+║           OPENBROADCAST - QUICK START GUIDE                ║
+╚════════════════════════════════════════════════════════════╝
+
+  Welcome to OpenBroadcast - Eye Gaze Correction!
+  
+  This application corrects your eye gaze during video calls
+  so you appear to look straight at the camera, even when
+  reading notes or looking at a second screen.
+
+
+═══════════════════════════════════════════════════════════════
+  METHOD 1: EASIEST (Double-click)
+═══════════════════════════════════════════════════════════════
+
+  1. Double-click "setup.bat"
+     - This will automatically install Python if needed
+     - Installs all required packages
+     - Takes 2-5 minutes on first run
+
+  2. Double-click "run.bat"
+     - Launches the application
+
+
+═══════════════════════════════════════════════════════════════
+  METHOD 2: MANUAL (For advanced users)
+═══════════════════════════════════════════════════════════════
+
+  1. Install Python 3.10 or newer
+     Download: https://www.python.org/downloads/
+     IMPORTANT: Check "Add Python to PATH" during install!
+
+  2. Open Command Prompt in this folder
+
+  3. Install dependencies:
+     pip install -r requirements.txt
+
+  4. Run the application:
+     python main.py
+
+
+═══════════════════════════════════════════════════════════════
+  FIRST LAUNCH
+═══════════════════════════════════════════════════════════════
+
+  On first launch, the app will:
+  
+  1. Detect your hardware (CPU, RAM, GPU, camera)
+  2. Show a wizard with your system specs
+  3. Auto-configure optimal settings for your PC
+  4. Start the camera with eye gaze correction
+
+
+═══════════════════════════════════════════════════════════════
+  CONTROLS
+═══════════════════════════════════════════════════════════════
+
+  Correction Strength  - How much to correct (0-100%)
+  ENABLED/DISABLED     - Toggle correction on/off
+  Calibrate Gaze       - Look at camera for 2 seconds
+  Show Landmarks       - Debug: show face tracking points
+  Performance Mode     - Geometric (fast) vs Hybrid (accurate)
+
+
+═══════════════════════════════════════════════════════════════
+  PERFORMANCE TIERS
+═══════════════════════════════════════════════════════════════
+
+  Your PC will be auto-classified:
+
+  ULTRA_LOW  - Old i3, <4GB RAM    → 15 FPS, geometric only
+  LOW        - i3/i5, <8GB RAM     → 20 FPS, geometric + smooth
+  MEDIUM     - i5+, 8GB RAM        → 25 FPS, hybrid (best balance)
+  HIGH       - i7+, 16GB+ RAM      → 30 FPS, full quality
+
+
+═══════════════════════════════════════════════════════════════
+  TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════
+
+  "pip is not recognized"
+  → Run setup.bat instead, or install Python with "Add to PATH"
+
+  "No camera found"
+  → Close other apps using the camera (Zoom, Teams, etc.)
+
+  "Low FPS"
+  → Reduce resolution in settings, or use Geometric mode
+
+  "App won't start"
+  → Run: pip install -r requirements.txt
+  → Then: python main.py
+
+
+═══════════════════════════════════════════════════════════════
+  FILES
+═══════════════════════════════════════════════════════════════
+
+  setup.bat         - Auto-install dependencies
+  run.bat           - Launch the application
+  main.py           - Application entry point
+  requirements.txt  - Python package list
+  config.py         - Default settings
+  core/             - Core detection and correction
+  ui/               - User interface
+  models/           - Neural network models
+  data/             - Training data tools
+  utils/            - Utility functions
+
+
+═══════════════════════════════════════════════════════════════
+  NEED HELP?
+═══════════════════════════════════════════════════════════════
+
+  Check the README.md file for detailed documentation.
+  
+  For issues, ensure you have:
+  - Python 3.10+ installed
+  - A working webcam
+  - Windows 10 or newer
+  
+╔════════════════════════════════════════════════════════════╗
+║                    Happy video calling!                    ║
+╚════════════════════════════════════════════════════════════╝
