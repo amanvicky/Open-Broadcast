@@ -54,7 +54,7 @@ class GazeCorrectionNet(nn.Module):
         self.offset_proj = nn.Sequential(
             nn.Linear(offset_dim, 64),
             nn.ReLU(inplace=True),
-            nn.Linear(64, 128),
+            nn.Linear(64, 256),
             nn.ReLU(inplace=True),
         )
 
@@ -89,8 +89,8 @@ class GazeCorrectionNet(nn.Module):
         b = self.bottleneck(self.pool(e3))  # (B, 256, 8, 8)
 
         # Inject offset information
-        offset_feat = self.offset_proj(offset)  # (B, 128)
-        offset_feat = offset_feat.view(-1, 128, 1, 1)  # (B, 128, 1, 1)
+        offset_feat = self.offset_proj(offset)  # (B, 256)
+        offset_feat = offset_feat.view(-1, 256, 1, 1)  # (B, 256, 1, 1)
         offset_feat = F.interpolate(offset_feat, size=b.shape[2:])  # (B, 128, 8, 8)
         b = b + offset_feat  # Add offset features to bottleneck
 
@@ -164,7 +164,7 @@ class GazeCorrectionDataset:
                 f"{side}_eye": eye,
                 "is_blinking": False,
             }
-            corrected_frame = self.eye_corrector.correct_frame(frame, single_eye_data)
+            corrected_frame = self.eye_corrector._transplant_iris(frame.copy(), single_eye_data, side)
             target_patch = corrected_frame[y0:y1, x0:x1].copy()
 
             # Normalize offset
