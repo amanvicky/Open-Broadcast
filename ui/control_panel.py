@@ -132,6 +132,14 @@ class ControlPanel(QWidget):
         self.landmarks_cb.toggled.connect(self.landmarks_toggled.emit)
         dl.addWidget(self.landmarks_cb)
 
+        self.demo_cb = QCheckBox("Demo Mode (Simulate 20° Offset)")
+        self.demo_cb.setToolTip("Prove correction works by simulating a 20-degree gaze offset")
+        dl.addWidget(self.demo_cb)
+
+        self.batch_btn = QPushButton("Process Video File (Ctrl+B)")
+        self.batch_btn.setToolTip("Apply correction to an existing video file")
+        dl.addWidget(self.batch_btn)
+
         cl.addWidget(dg)
 
         # Performance group (collapsible)
@@ -231,6 +239,11 @@ class ControlPanel(QWidget):
         tgl.addWidget(self.train_status)
 
         cl.addWidget(tg)
+
+        # About button
+        self.about_btn = QPushButton("About OpenBroadcast")
+        self.about_btn.setToolTip("Version info and credits")
+        cl.addWidget(self.about_btn)
 
         cl.addStretch()
         scroll.setWidget(content)
