@@ -352,6 +352,10 @@ class MainWindow(QMainWindow):
                 samples = np.array(self._wizard_gaze_samples)
                 self.gaze_estimator.calibration_offset_yaw = float(np.mean(samples[:, 0]))
                 self.gaze_estimator.calibration_offset_pitch = float(np.mean(samples[:, 1]))
+                # Reset smoothed state so calibration takes effect immediately
+                self.gaze_estimator.smoothed_yaw = 0.0
+                self.gaze_estimator.smoothed_pitch = 0.0
+                self.gaze_estimator.history.clear()
                 self.control_panel.set_calibrate_status("Calibrated!")
             self._wizard_gaze_samples = []
         else:
@@ -375,6 +379,10 @@ class MainWindow(QMainWindow):
                 samples = np.array(self._wizard_gaze_samples)
                 self.gaze_estimator.calibration_offset_yaw = float(np.mean(samples[:, 0]))
                 self.gaze_estimator.calibration_offset_pitch = float(np.mean(samples[:, 1]))
+                # Reset smoothed state so calibration takes effect immediately
+                self.gaze_estimator.smoothed_yaw = 0.0
+                self.gaze_estimator.smoothed_pitch = 0.0
+                self.gaze_estimator.history.clear()
                 self.control_panel.set_calibrate_status("Calibrated!")
             self._wizard_gaze_samples = []
             return

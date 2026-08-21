@@ -176,7 +176,11 @@ class GeometricGazeEstimator:
 
         samples = np.array(self._calibration_samples)
         self.calibration_offset_yaw = np.mean(samples[:, 0])
-        self.calibration_offset_pitch = np.mean(samples[:, 1])
+        self.calibration_offset_pitch = float(np.mean(samples[:, 1]))
+        # Reset smoothed state so calibration takes effect immediately
+        self.smoothed_yaw = 0.0
+        self.smoothed_pitch = 0.0
+        self.history.clear()
         return True
 
     @property
