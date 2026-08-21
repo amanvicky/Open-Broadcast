@@ -448,7 +448,7 @@ class MainWindow(QMainWindow):
                 os.makedirs("data", exist_ok=True)
                 inputs = np.stack([p["input"] for p in self._train_pairs]).astype(np.float32) / 255.0
                 targets = np.stack([p["target"] for p in self._train_pairs]).astype(np.float32) / 255.0
-                offsets = np.stack([p["offset" for p in self._train_pairs])
+                offsets = np.stack([p["offset"] for p in self._train_pairs])
                 inputs = np.transpose(inputs, (0, 3, 1, 2))
                 targets = np.transpose(targets, (0, 3, 1, 2))
 
