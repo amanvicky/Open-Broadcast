@@ -29,6 +29,7 @@ class MainWindow(QMainWindow):
     def __init__(self, config):
         super().__init__()
         self.config = config
+        self._version = "1.1.0"
         self.setWindowTitle(f"OpenBroadcast v{self._version} — Eye Gaze Correction")
         self.setMinimumSize(900, 600)
 
@@ -55,9 +56,6 @@ class MainWindow(QMainWindow):
             segmenter=_segmenter,
         )
         self.fps_counter = FPSCounter()
-
-        # Version
-        self._version = "1.1.0"
 
         # State
         self.correction_enabled = True
