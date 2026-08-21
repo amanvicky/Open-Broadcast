@@ -124,7 +124,7 @@ class EyeCorrector:
         return result
 
     def _extract_iris(self, frame, cx, cy, radius):
-        """Extract circular iris region and its feathered mask."""
+        """Extract iris region and mask (segmented or circular)."""
         h, w = frame.shape[:2]
         x0 = max(0, cx - radius)
         y0 = max(0, cy - radius)
@@ -135,7 +135,33 @@ class EyeCorrector:
         if patch.size == 0:
             return None, None
 
-        # Circular mask with feathered edges
+        # Try segmented mask first (learned, more accurate)
+        if self._segmenter is not None:
+            try:
+                # Extract 64x64 patch centered on eye for segmentation
+                half = 32
+                sx0 = max(0, cx - half)
+                sy0 = max(0, cy - half)
+                sx1 = min(w, cx + half)
+                sy1 = min(h, cy + half)
+                if (sx1 - sx0) >= 64 and (sy1 - sy0) >= 64:
+                    seg_patch = frame[sy0:sy1, sx0:sx1].copy()
+                    import torch
+                    tensor = torch.from_numpy(seg_patch).permute(2, 0, 1).unsqueeze(0).float() / 255.0
+                    tensor = tensor.to(self._segmenter.device)
+                    with torch.no_grad():
+                        mask_logits = self._segmenter.model(tensor)
+                    seg_mask = torch.sigmoid(mask_logits).squeeze().cpu().numpy()
+                    seg_mask = (seg_mask > 0.5).astype(np.float32)
+                    # Feather edges
+                    seg_mask = cv2.GaussianBlur(seg_mask, (5, 5), 1.0)
+                    # Map from 64x64 to patch size
+                    mask = cv2.resize(seg_mask, (x1 - x0, y1 - y0), interpolation=cv2.INTER_LINEAR)
+                    return patch, mask
+            except Exception:
+                pass  # Fall through to circular mask
+
+        # Circular mask with feathered edges (fallback)
         mask = np.zeros((y1 - y0, x1 - x0), dtype=np.float32)
         local_cx = cx - x0
         local_cy = cy - y0

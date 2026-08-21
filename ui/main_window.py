@@ -38,8 +38,21 @@ class MainWindow(QMainWindow):
             ema_alpha=0.6,
             look_at_camera_threshold=0.15,
         )
+
+        # Try to load iris segmenter for better mask quality
+        _segmenter = None
+        _seg_path = os.path.join(os.path.dirname(__file__), '..', 'models', 'iris_segmenter.pth')
+        try:
+            from core.iris_segmenter import IrisSegmenter
+            if os.path.exists(_seg_path):
+                _segmenter = IrisSegmenter(_seg_path)
+                print('[MainWindow] Iris segmenter loaded')
+        except Exception as e:
+            print(f'[MainWindow] Iris segmenter not available: {e}')
+
         self.eye_corrector = EyeCorrector(
             strength=config.get("correction_strength", 0.85),
+            segmenter=_segmenter,
         )
         self.fps_counter = FPSCounter()
 
