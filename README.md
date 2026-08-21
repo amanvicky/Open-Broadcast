@@ -8,18 +8,15 @@ When you're on a video call and reading notes or looking at a second screen, Ope
 
 - **Real-time eye gaze correction** — makes eyes appear to look straight at camera
 - **Works on low-end PCs** — no GPU required, runs on CPU at 30fps
-- **Demo mode** — simulate 20° gaze offset to prove correction works
 - **Iris segmentation** — learned mask for precise iris boundaries (55K params)
 - **Iris position overlay** — red/green dots + shift arrow with pixel count
-- **Correction quality score** — real-time "Shift: 12px" in status bar
 - **Two correction modes** — Geometric (fastest) or Neural (best)
 - **Interactive calibration wizard** — 8-point guided calibration with moving dot
 - **Auto-calibration** — silently calibrates during first 3 seconds
 - **Temporal consistency** — 70/30 frame blending to eliminate flicker
 - **Virtual camera output** — use with Zoom, Teams, OBS, etc.
 - **Recording** — save corrected video to file
-- **Batch video processing** — apply correction to existing video files
-- **Keyboard shortcuts** — Space, C, L, D, R, T, S, 1-5, Ctrl+A, Ctrl+B, Esc
+- **Keyboard shortcuts** — Space, C, L, R, T, S, 1-5, Esc
 - **Preset system** — save/load 5 configurations for different use cases
 - **Online learning** — model continuously improves while app runs
 - **Dark theme UI** — professional broadcast-style interface
@@ -58,8 +55,6 @@ python main.py
 2. **Correction is enabled by default** — eyes should appear centered
 3. **Auto-calibration** — waits 3 seconds, then calibrates silently
 4. **Enable Compare mode** — checkbox shows original vs corrected side-by-side
-5. **Press D for Demo mode** — see dramatic correction without moving
-6. **Check the status bar** — shows "Shift: XXpx" for correction quality
 
 ## Controls
 
@@ -70,13 +65,10 @@ python main.py
 | **Space** | Toggle correction ON/OFF |
 | **C** | Toggle compare mode |
 | **L** | Toggle face landmarks |
-| **D** | Toggle demo mode (simulate 20° offset) |
 | **R** | Toggle recording |
 | **T** | Start/stop training |
 | **S** | Save current settings as preset 1 |
 | **1-5** | Load preset 1-5 |
-| **Ctrl+A** | About dialog |
-| **Ctrl+B** | Batch process video file |
 | **Esc** | Quit app |
 
 ### UI Controls
@@ -87,15 +79,12 @@ python main.py
 | Correction Amplification | 1.0x-5.0x — multiplier for correction shift |
 | Compare: Original vs Corrected | Side-by-side split view |
 | Show Face Landmarks | Display detected eye landmarks overlay |
-| Demo Mode | Simulate 20° gaze offset to prove correction |
-| Process Video File | Apply correction to existing video (Ctrl+B) |
 | Performance Mode | Geometric (Fastest) or Neural (Best) |
 | Calibrate Gaze | Calibrate to your eye position |
 | Interactive Calibration | 8-point guided wizard with moving dot |
 | Virtual Camera | Output corrected video to OBS/Zoom/Teams |
 | Record Corrected Video | Save corrected output to file (R) |
 | Train Model | Collect data + train neural model in-app |
-| About OpenBroadcast | Version info and credits (Ctrl+A) |
 
 ### Presets
 
@@ -108,20 +97,6 @@ python main.py
 | 5. Maximum | 100% | 5.0x | Maximum correction |
 
 Press **1-5** to load, **S** to save current settings to slot 1.
-
-## Demo Mode
-
-The fastest way to see if correction works:
-
-1. Run `python main.py`
-2. Look at the camera (correction is subtle at small angles)
-3. Press **D** to enable Demo Mode
-4. The app simulates a 20° gaze offset
-5. You'll see dramatic correction in the preview
-6. Status bar shows "DEMO" and "Shift: XXpx"
-7. Press **D** again to disable
-
-This proves the correction works without requiring you to physically look away.
 
 ## Training the Iris Segmenter
 
@@ -175,16 +150,6 @@ python -m data.large_scale_generator --input data/raw --target-count 100000
 # Step 3: Train the model (~30 minutes on CPU)
 python train.py --train --data data/large_pairs.npz --epochs 100
 ```
-
-## Batch Video Processing
-
-Apply correction to existing video files:
-
-1. Press **Ctrl+B** or click "Process Video File"
-2. Select input video (MP4, AVI, MKV, MOV)
-3. Choose output location
-4. Processing runs in background with progress display
-5. Output is saved as AVI with correction applied
 
 ## Virtual Camera Output
 
@@ -305,9 +270,8 @@ All of the above plus:
 
 ### Correction not visible
 - Enable **Compare: Original vs Corrected** to see side-by-side
-- Press **D** for Demo mode to see dramatic correction
-- Check the **Shift: XXpx** in status bar
 - Increase **Correction Strength** to 100%
+- Increase **Correction Amplification** to 4.0x-5.0x
 - Run **Interactive Calibration** to calibrate to your eyes
 
 ### Low FPS
@@ -326,8 +290,6 @@ All of the above plus:
 ## Version
 
 Current version: **1.1.0**
-
-Press **Ctrl+A** or click "About OpenBroadcast" for version info.
 
 ## License
 
