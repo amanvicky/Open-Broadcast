@@ -232,6 +232,15 @@ class MainWindow(QMainWindow):
         eye_data = self.face_detector.get_eye_data(landmarks, frame.shape)
         gaze = self.gaze_estimator.estimate(eye_data)
 
+        # Apply calibration offset to eye_data so correction benefits from calibration
+        cal_yaw = self.gaze_estimator.calibration_offset_yaw
+        cal_pitch = self.gaze_estimator.calibration_offset_pitch
+        if abs(cal_yaw) > 0.001 or abs(cal_pitch) > 0.001:
+            for side in ("left", "right"):
+                eye = eye_data[f"{side}_eye"]
+                eye["offset_x"] -= cal_yaw
+                eye["offset_y"] -= cal_pitch
+
         if self.correction_enabled and not eye_data["is_blinking"]:
             if self._use_neural and self._neural_corrector:
                 display_frame = self._neural_corrector.correct_frame(frame, eye_data)
@@ -280,10 +289,15 @@ class MainWindow(QMainWindow):
 
         # Status bar
         mode = "ON" if self.correction_enabled else "OFF"
+        cal_info = ""
+        if self._calibrating:
+            cal_info = " | CALIBRATING..."
+        elif abs(cal_yaw) > 0.001 or abs(cal_pitch) > 0.001:
+            cal_info = " | Calibrated"
         self.statusBar().showMessage(
             f"Correction:{mode} | "
             f"Y={gaze.yaw:+.1f}° P={gaze.pitch:+.1f}° | "
-            f"FPS:{self.fps_counter.fps:.1f}"
+            f"FPS:{self.fps_counter.fps:.1f}{cal_info}"
         )
 
     def _on_camera_error(self, message):

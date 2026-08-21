@@ -84,7 +84,8 @@ class ControlPanel(QWidget):
         self.amp_slider = QSlider(Qt.Orientation.Horizontal)
         self.amp_slider.setRange(100, 500)
         amp_default = int(self.config.get("amplification", 4.0) * 100)
-        self.amp_slider.setValue(max(100, min(500, amp_default)))
+        # Ensure minimum 4.0x on startup for visible correction
+        self.amp_slider.setValue(max(400, min(500, amp_default)))
         self.amp_slider.valueChanged.connect(self._on_amp)
         gl.addWidget(self.amp_slider)
 
