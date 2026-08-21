@@ -52,8 +52,9 @@ class ControlPanel(QWidget):
         cl.setContentsMargins(0, 0, 0, 0)
         cl.setSpacing(10)
 
-        # Correction group
+        # Correction group (always open)
         group = QGroupBox("Eye Correction")
+        group.setCheckable(False)
         gl = QVBoxLayout(group)
 
         self.toggle_btn = QPushButton("ENABLED")
@@ -91,8 +92,11 @@ class ControlPanel(QWidget):
 
         cl.addWidget(group)
 
-        # Display group
+        # Display group (collapsible)
         dg = QGroupBox("Display")
+        dg.setCheckable(True)
+        dg.setChecked(False)
+        dg.toggled.connect(lambda checked: self._toggle_group(dg, checked))
         dl = QVBoxLayout(dg)
 
         self.compare_cb = QCheckBox("Compare: Original vs Corrected")
@@ -105,8 +109,11 @@ class ControlPanel(QWidget):
 
         cl.addWidget(dg)
 
-        # Performance group
+        # Performance group (collapsible)
         pg = QGroupBox("Performance")
+        pg.setCheckable(True)
+        pg.setChecked(False)
+        pg.toggled.connect(lambda checked: self._toggle_group(pg, checked))
         pl = QVBoxLayout(pg)
 
         pl.addWidget(QLabel("Mode"))
@@ -118,8 +125,11 @@ class ControlPanel(QWidget):
 
         cl.addWidget(pg)
 
-        # Calibration group
+        # Calibration group (collapsible)
         cg = QGroupBox("Calibration")
+        cg.setCheckable(True)
+        cg.setChecked(False)
+        cg.toggled.connect(lambda checked: self._toggle_group(cg, checked))
         cgl = QVBoxLayout(cg)
 
         self.calibrate_btn = QPushButton("Calibrate Gaze")
@@ -139,8 +149,11 @@ class ControlPanel(QWidget):
 
         cl.addWidget(cg)
 
-        # Virtual Camera group
+        # Virtual Camera group (collapsible)
         vg = QGroupBox("Output")
+        vg.setCheckable(True)
+        vg.setChecked(False)
+        vg.toggled.connect(lambda checked: self._toggle_group(vg, checked))
         vl = QVBoxLayout(vg)
 
         self.virtcam_btn = QPushButton("Virtual Camera: OFF")
@@ -156,8 +169,11 @@ class ControlPanel(QWidget):
 
         cl.addWidget(vg)
 
-        # Training group
+        # Training group (collapsible)
         tg = QGroupBox("Neural Training")
+        tg.setCheckable(True)
+        tg.setChecked(False)
+        tg.toggled.connect(lambda checked: self._toggle_group(tg, checked))
         tgl = QVBoxLayout(tg)
 
         self.train_btn = QPushButton("Train Model")
@@ -207,3 +223,10 @@ class ControlPanel(QWidget):
 
     def _on_mode_changed(self, index):
         self.mode_changed.emit(index)
+
+    def _toggle_group(self, group, checked):
+        """Show/hide all children in a collapsible group."""
+        for i in range(group.layout().count()):
+            child = group.layout().itemAt(i)
+            if child and child.widget():
+                child.widget().setVisible(checked)

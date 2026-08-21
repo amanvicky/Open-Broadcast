@@ -80,6 +80,9 @@ class MainWindow(QMainWindow):
 
         self._setup_ui()
         self._start_camera()
+        self._setup_shortcuts()
+        self._setup_presets()
+        self._setup_online_learning()
 
         # Auto-calibration: silently calibrate during first 3 seconds
         self._auto_cal_samples = []
@@ -181,6 +184,10 @@ class MainWindow(QMainWindow):
         # Calibration mode: collect samples
         if self._calibrating:
             self.gaze_estimator.add_calibration_sample(eye_data)
+
+        # Online learning: collect pairs in background
+        if self._use_neural and self._training_active:
+            self._collect_online_sample(frame, eye_data)
 
         # Auto-calibration: collect samples silently on startup
         if self._auto_cal_active:
@@ -513,6 +520,108 @@ class MainWindow(QMainWindow):
     def _on_mode_changed(self, index):
         self._use_neural = (index == 1 and self._neural_corrector is not None)
 
+    def _collect_online_sample(self, frame, eye_data):
+        """Collect training pairs in background for online learning."""
+        import time
+        now = time.time()
+        if now - self._online_last_collect < 1.0:  # Collect every 1 second
+            return
+        self._online_last_collect = now
+
+        for side in ("left", "right"):
+            eye = eye_data[f"{side}_eye"]
+            pupil = np.array(eye["iris"], dtype=np.float32)
+            socket = np.array(eye["center"], dtype=np.float32)
+            eye_width = float(eye["width"])
+            if eye_width < 15 or eye_data["is_blinking"]:
+                continue
+            offset_x = (pupil[0] - socket[0]) / (eye_width + 1e-6)
+            offset_y = (pupil[1] - socket[1]) / (eye_width + 1e-6)
+            if abs(offset_x) < 0.03 and abs(offset_y) < 0.03:
+                continue
+            cx, cy = int(socket[0]), int(socket[1])
+            half = 32
+            h, w = frame.shape[:2]
+            x0, y0 = max(0, cx - half), max(0, cy - half)
+            x1, y1 = min(w, cx + half), min(h, cy + half)
+            if (x1 - x0) < 64 or (y1 - y0) < 64:
+                continue
+            input_patch = frame[y0:y1, x0:x1].copy()
+            single_eye = {f"{side}_eye": eye, "is_blinking": False}
+            corrected = self.eye_corrector._transplant_iris(frame.copy(), single_eye, side)
+            target_patch = corrected[y0:y1, x0:x1].copy()
+            self._online_pairs.append({
+                "input": input_patch, "target": target_patch,
+                "offset": np.array([offset_x, offset_y], dtype=np.float32),
+            })
+            # Keep max 2000 pairs
+            if len(self._online_pairs) > 2000:
+                self._online_pairs = self._online_pairs[-2000:]
+
+        # Fine-tune every 500 pairs
+        if len(self._online_pairs) >= 500 and len(self._online_pairs) % 100 < 2:
+            self._online_finetune()
+
+    def _online_finetune(self):
+        """Fine-tune model on collected online pairs."""
+        import threading
+        def finetune():
+            try:
+                import torch
+                import torch.nn as nn
+                from core.gaze_model import GazeCorrectionNet
+                model_path = os.path.join(os.path.dirname(__file__), '..', 'models', 'gaze_correction.pth')
+                if not os.path.exists(model_path):
+                    return
+                checkpoint = torch.load(model_path, map_location='cpu', weights_only=False)
+                model = GazeCorrectionNet(in_channels=3, offset_dim=2)
+                model.load_state_dict(checkpoint["model_state_dict"])
+                model.train()
+                optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+                loss_fn = nn.L1Loss()
+                pairs = self._online_pairs[-500:]
+                inputs = np.stack([p["input"] for p in pairs]).astype(np.float32) / 255.0
+                targets = np.stack([p["target"] for p in pairs]).astype(np.float32) / 255.0
+                offsets = np.stack([p["offset"] for p in pairs])
+                inputs = np.transpose(inputs, (0, 3, 1, 2))
+                targets = np.transpose(targets, (0, 3, 1, 2))
+                x = torch.tensor(inputs)
+                t = torch.tensor(targets)
+                o = torch.tensor(offsets)
+                for _ in range(5):
+                    pred = model(x, o)
+                    loss = loss_fn(pred, t)
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+                model.eval()
+                checkpoint["model_state_dict"] = model.state_dict()
+                torch.save(checkpoint, model_path)
+                from PyQt6.QtCore import QTimer
+                QTimer.singleShot(0, lambda: self._reload_neural_model())
+            except Exception as e:
+                print(f"[Online] Finetune error: {e}")
+        threading.Thread(target=finetune, daemon=True).start()
+
+    def _reload_neural_model(self):
+        """Reload neural model from disk."""
+        model_path = os.path.join(os.path.dirname(__file__), '..', 'models', 'gaze_correction.pth')
+        if HAS_NEURAL and os.path.exists(model_path):
+            try:
+                self._neural_corrector = NeuralCorrector(model_path)
+                self._use_neural = True
+                if self.control_panel.mode_combo.count() < 2:
+                    self.control_panel.mode_combo.addItem("Neural (Best)")
+            except Exception:
+                pass
+
+    def closeEvent(self, event):
+        self._online_pairs = []
+        if hasattr(self, "camera_thread") and self.camera_thread:
+            self.camera_thread.stop()
+        self.face_detector.cleanup()
+        event.accept()
+
     def _on_virtual_cam_toggled(self, active):
         if active:
             try:
@@ -540,8 +649,70 @@ class MainWindow(QMainWindow):
                 self._virtcam_writer = None
             self.control_panel.set_virtcam_status("")
 
-    def closeEvent(self, event):
-        if hasattr(self, "camera_thread") and self.camera_thread:
-            self.camera_thread.stop()
-        self.face_detector.cleanup()
-        event.accept()
+    def _setup_shortcuts(self):
+        """Add keyboard shortcuts for power users."""
+        from PyQt6.QtGui import QShortcut, QKeySequence
+
+        QShortcut(QKeySequence("Space"), self, self._toggle_correction)
+        QShortcut(QKeySequence("C"), self, self._toggle_compare)
+        QShortcut(QKeySequence("L"), self, self._toggle_landmarks)
+        QShortcut(QKeySequence("T"), self, self._on_train_clicked)
+        QShortcut(QKeySequence("1"), self, lambda: self._load_preset(0))
+        QShortcut(QKeySequence("2"), self, lambda: self._load_preset(1))
+        QShortcut(QKeySequence("3"), self, lambda: self._load_preset(2))
+        QShortcut(QKeySequence("4"), self, lambda: self._load_preset(3))
+        QShortcut(QKeySequence("5"), self, lambda: self._load_preset(4))
+        QShortcut(QKeySequence("S"), self, self._save_current_preset)
+        QShortcut(QKeySequence("Escape"), self, self.close)
+
+    def _toggle_correction(self):
+        self.correction_enabled = not self.correction_enabled
+        self.preview.correction_enabled = self.correction_enabled
+        self.control_panel.toggle_btn.setChecked(self.correction_enabled)
+        self.control_panel.toggle_btn.setText("ENABLED" if self.correction_enabled else "DISABLED")
+
+    def _toggle_compare(self):
+        checked = not self.control_panel.compare_cb.isChecked()
+        self.control_panel.compare_cb.setChecked(checked)
+
+    def _toggle_landmarks(self):
+        self.show_landmarks = not self.show_landmarks
+        self.control_panel.landmarks_cb.setChecked(self.show_landmarks)
+
+    def _setup_presets(self):
+        """Load presets from config."""
+        self._presets = self.config.get("presets", [
+            {"name": "Zoom Call", "strength": 85, "amplification": 300},
+            {"name": "Streaming", "strength": 100, "amplification": 500},
+            {"name": "Recording", "strength": 90, "amplification": 400},
+            {"name": "Subtle", "strength": 50, "amplification": 200},
+            {"name": "Maximum", "strength": 100, "amplification": 500},
+        ])
+
+    def _load_preset(self, index):
+        """Load a preset by index."""
+        if index < len(self._presets):
+            preset = self._presets[index]
+            self.control_panel.strength_slider.setValue(preset["strength"])
+            self.control_panel.amp_slider.setValue(preset["amplification"])
+            self.control_panel.set_calibrate_status(f"Loaded: {preset['name']}")
+
+    def _save_current_preset(self):
+        """Save current settings as preset 1."""
+        self._presets[0] = {
+            "name": "Custom",
+            "strength": self.control_panel.strength_slider.value(),
+            "amplification": self.control_panel.amp_slider.value(),
+        }
+        self.config["presets"] = self._presets
+        self.control_panel.set_calibrate_status("Preset saved!")
+
+    def _setup_online_learning(self):
+        """Setup background online learning."""
+        self._online_pairs = []
+        self._online_active = False
+        self._online_last_collect = 0
+
+    def _on_frame_ready(self, frame, timestamp):
+        self.current_frame = frame
+        self.fps_counter.update()
