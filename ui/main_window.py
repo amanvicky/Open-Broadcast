@@ -112,9 +112,9 @@ class MainWindow(QMainWindow):
         self.control_panel.virtual_cam_toggled.connect(self._on_virtual_cam_toggled)
         self.control_panel.mode_changed.connect(self._on_mode_changed)
 
-        # Disable neural option if model not loaded
+        # Remove neural option if model not loaded
         if not self._use_neural:
-            self.control_panel.mode_combo.setItemEnabled(1, False)
+            self.control_panel.mode_combo.removeItem(1)
 
         # Sync initial values
         self.eye_corrector.strength = self.control_panel.strength_slider.value() / 100.0
