@@ -8,22 +8,38 @@ When you're on a video call and reading notes or looking at a second screen, Ope
 
 - **Real-time eye gaze correction** — makes eyes appear to look straight at camera
 - **Works on low-end PCs** — no GPU required, runs on CPU at 30fps
+- **Demo mode** — simulate 20° gaze offset to prove correction works
+- **Iris segmentation** — learned mask for precise iris boundaries (55K params)
+- **Iris position overlay** — red/green dots + shift arrow with pixel count
+- **Correction quality score** — real-time "Shift: 12px" in status bar
 - **Two correction modes** — Geometric (fastest) or Neural (best)
-- **Iris position overlay** — red/green dots + shift arrow show exactly what's happening
-- **Face landmark overlay** — visualize detected eye positions
 - **Interactive calibration wizard** — 8-point guided calibration with moving dot
-- **Auto-calibration** — silently calibrates during first 3 seconds of use
-- **Keyboard shortcuts** — Space, C, L, T, S, 1-5, Esc for power users
-- **Preset system** — save/load 5 different configurations for different use cases
-- **Online learning** — model continuously improves while app runs
+- **Auto-calibration** — silently calibrates during first 3 seconds
+- **Temporal consistency** — 70/30 frame blending to eliminate flicker
 - **Virtual camera output** — use with Zoom, Teams, OBS, etc.
-- **Static image testing** — test correction on photos without a webcam
-- **Large-scale data pipeline** — download 300K+ face images for training
+- **Recording** — save corrected video to file
+- **Batch video processing** — apply correction to existing video files
+- **Keyboard shortcuts** — Space, C, L, D, R, T, S, 1-5, Ctrl+A, Ctrl+B, Esc
+- **Preset system** — save/load 5 configurations for different use cases
+- **Online learning** — model continuously improves while app runs
 - **Dark theme UI** — professional broadcast-style interface
 
 ## Quick Start
 
-### Install
+### Option 1: Automated Setup (Recommended)
+
+```bash
+# Run the automated setup script
+setup.bat
+```
+
+This will:
+1. Download Python embeddable if not installed
+2. Install all dependencies
+3. Download face detection model
+4. Create required directories
+
+### Option 2: Manual Setup
 
 ```bash
 # Clone or download this project
@@ -42,8 +58,10 @@ python main.py
 2. **Correction is enabled by default** — eyes should appear centered
 3. **Auto-calibration** — waits 3 seconds, then calibrates silently
 4. **Enable Compare mode** — checkbox shows original vs corrected side-by-side
-5. **Adjust strength** — use the slider (0-100%)
-6. **Adjust amplification** — multiplier for correction shift (1.0x-5.0x)
+5. **Press D for Demo mode** — see dramatic correction without moving
+6. **Check the status bar** — shows "Shift: XXpx" for correction quality
+
+## Controls
 
 ### Keyboard Shortcuts
 
@@ -52,12 +70,16 @@ python main.py
 | **Space** | Toggle correction ON/OFF |
 | **C** | Toggle compare mode |
 | **L** | Toggle face landmarks |
+| **D** | Toggle demo mode (simulate 20° offset) |
+| **R** | Toggle recording |
 | **T** | Start/stop training |
 | **S** | Save current settings as preset 1 |
 | **1-5** | Load preset 1-5 |
+| **Ctrl+A** | About dialog |
+| **Ctrl+B** | Batch process video file |
 | **Esc** | Quit app |
 
-### Controls
+### UI Controls
 
 | Control | Description |
 |---------|-------------|
@@ -65,11 +87,15 @@ python main.py
 | Correction Amplification | 1.0x-5.0x — multiplier for correction shift |
 | Compare: Original vs Corrected | Side-by-side split view |
 | Show Face Landmarks | Display detected eye landmarks overlay |
+| Demo Mode | Simulate 20° gaze offset to prove correction |
+| Process Video File | Apply correction to existing video (Ctrl+B) |
 | Performance Mode | Geometric (Fastest) or Neural (Best) |
 | Calibrate Gaze | Calibrate to your eye position |
 | Interactive Calibration | 8-point guided wizard with moving dot |
 | Virtual Camera | Output corrected video to OBS/Zoom/Teams |
+| Record Corrected Video | Save corrected output to file (R) |
 | Train Model | Collect data + train neural model in-app |
+| About OpenBroadcast | Version info and credits (Ctrl+A) |
 
 ### Presets
 
@@ -83,15 +109,36 @@ python main.py
 
 Press **1-5** to load, **S** to save current settings to slot 1.
 
-### Test on Static Image
+## Demo Mode
+
+The fastest way to see if correction works:
+
+1. Run `python main.py`
+2. Look at the camera (correction is subtle at small angles)
+3. Press **D** to enable Demo Mode
+4. The app simulates a 20° gaze offset
+5. You'll see dramatic correction in the preview
+6. Status bar shows "DEMO" and "Shift: XXpx"
+7. Press **D** again to disable
+
+This proves the correction works without requiring you to physically look away.
+
+## Training the Iris Segmenter
+
+The iris segmenter learns exact iris boundaries for better mask quality:
 
 ```bash
-# Run correction on a photo (no webcam needed)
-python main.py --test-image photo.jpg --output result.jpg
+# Collect training data from webcam (2 minutes)
+python train_segmenter.py --collect
 
-# Adjust strength and amplification
-python main.py --test-image photo.jpg --strength 0.9 --amplification 5.0
+# Train the model (~5 minutes on CPU)
+python train_segmenter.py --train
+
+# Or do both at once
+python train_segmenter.py --all
 ```
+
+The trained model (55K params, 248KB) automatically loads when the app starts.
 
 ## Training the Neural Model
 
@@ -108,15 +155,13 @@ python train.py --train --epochs 50
 python main.py
 ```
 
-### Guided Training (better data quality)
+### In-App Training
 
-```bash
-# Collects data in 8 directions for balanced training
-python train.py --guided
-
-# Train with more epochs for better results
-python train.py --train --epochs 100
-```
+1. Run `python main.py`
+2. Click **"Train Model"** in Neural Training group
+3. Follow the guided directions (~20 seconds)
+4. Training runs automatically (~30 seconds)
+5. "Neural (Best)" appears in Performance Mode dropdown
 
 ### Large-Scale Training (best quality)
 
@@ -129,56 +174,63 @@ python -m data.large_scale_generator --input data/raw --target-count 100000
 
 # Step 3: Train the model (~30 minutes on CPU)
 python train.py --train --data data/large_pairs.npz --epochs 100
-
-# Step 4: Run the app with neural correction
-python main.py
 ```
 
-### In-App Training
+## Batch Video Processing
 
-1. Run `python main.py`
-2. Click **"Train Model"** in Neural Training group
-3. Follow the guided directions (~20 seconds)
-4. Training runs automatically (~30 seconds)
-5. "Neural (Best)" appears in Performance Mode dropdown
+Apply correction to existing video files:
 
-## Online Learning
+1. Press **Ctrl+B** or click "Process Video File"
+2. Select input video (MP4, AVI, MKV, MOV)
+3. Choose output location
+4. Processing runs in background with progress display
+5. Output is saved as AVI with correction applied
 
-The app continuously improves while running:
+## Virtual Camera Output
 
-- Collects 1 training pair per second in background
-- Auto fine-tunes model every 500 pairs (5 epochs)
-- Keeps max 2000 pairs buffer (most recent)
-- Model improves continuously while app runs
-- Reloads neural model automatically after fine-tune
+Use corrected video in Zoom, Teams, OBS, or any webcam app:
+
+1. Click "Virtual Camera: OFF" to enable
+2. Open your video app (Zoom, Teams, etc.)
+3. Select "OBS Virtual Camera" as your webcam source
+4. Corrected video appears in the app
+
+Requires: `pip install pyvirtualcam`
 
 ## Project Structure
 
 ```
 openbroadcast/
-├── main.py                  # Entry point (--test-image support)
+├── main.py                  # Entry point
 ├── config.py                # Settings persistence
-├── train.py                 # Neural model training pipeline
+├── train.py                 # Neural model training
+├── train_segmenter.py       # Iris segmenter training
+├── setup.bat                # Automated Windows setup
+├── run.bat                  # App launcher
 ├── requirements.txt         # Dependencies
 ├── core/
 │   ├── camera.py            # Webcam capture (QThread)
-│   ├── face_detector.py     # MediaPipe face mesh + iris (478 landmarks)
+│   ├── face_detector.py     # MediaPipe face mesh + iris
 │   ├── gaze_estimator.py    # Geometric gaze estimation
 │   ├── eye_corrector.py     # Iris transplant correction
 │   ├── gaze_model.py        # Tiny U-Net for neural correction
-│   └── neural_corrector.py  # Neural model inference wrapper
+│   ├── neural_corrector.py  # Neural model inference
+│   └── iris_segmenter.py    # Iris segmentation model
 ├── ui/
-│   ├── main_window.py       # Main window + pipeline orchestration
+│   ├── main_window.py       # Main window + pipeline
 │   ├── preview_widget.py    # Camera preview + overlays
 │   ├── control_panel.py     # Settings sidebar
 │   └── styles.py            # Dark theme
 ├── utils/
 │   └── performance.py       # FPS counter
 ├── data/
-│   ├── download_datasets.py # Download academic face datasets
+│   ├── download_datasets.py # Download face datasets
 │   └── large_scale_generator.py # Generate training pairs
+├── installer/
+│   └── OpenBroadcast.iss    # Inno Setup installer script
 └── models/
-    └── gaze_correction.pth  # Trained neural model (after training)
+    ├── iris_segmenter.pth   # Trained iris segmenter
+    └── gaze_correction.pth  # Trained neural model
 ```
 
 ## How It Works
@@ -186,32 +238,27 @@ openbroadcast/
 ### Pipeline
 
 ```
-Camera → FaceDetector → GazeEstimator → EyeCorrector → Display
-  ↓         ↓              ↓              ↓             ↓
-cv2      MediaPipe      Geometric      Iris transplant  PyQt6
-         478 landmarks  (<1ms)         or Neural U-Net
+Camera → FaceDetector → GazeEstimator → EyeCorrector → Temporal Blend → Display
+  ↓         ↓              ↓              ↓                ↓            ↓
+cv2      MediaPipe      Geometric      Iris transplant   cv2        PyQt6
+         478 landmarks  (<1ms)         + Segmentation   addWeighted
 ```
 
 ### Gaze Estimation
 
-1. MediaPipe detects 468 face landmarks + 10 iris landmarks (5 per eye)
-2. Iris center position is measured relative to eye corners
+1. MediaPipe detects 468 face landmarks + 10 iris landmarks
+2. Iris center position measured relative to eye corners
 3. Offset from eye center = gaze direction
-4. Temporal smoothing reduces landmark jitter across frames
+4. Calibration offset applied to iris pixel position
+5. Temporal smoothing reduces landmark jitter
 
-### Eye Correction (Geometric)
+### Eye Correction
 
 1. Calculate pixel displacement to move iris to eye center
-2. Extract iris region with feathered circular mask
-3. Paste iris at new position with alpha blending
-4. EMA smoothing prevents jitter across frames
-
-### Eye Correction (Neural)
-
-1. Extract 64×64 eye patch centered on eye socket
-2. Feed patch + offset vector through U-Net
-3. Model predicts corrected eye patch
-4. Blend result back into frame with feathered mask
+2. Extract iris region (segmented mask or circular fallback)
+3. Paste iris at new position with feathered blend
+4. Clamp position to stay within eye socket (max 40% from center)
+5. EMA smoothing prevents jitter across frames
 
 ### Iris Position Overlay
 
@@ -219,7 +266,9 @@ cv2      MediaPipe      Geometric      Iris transplant  PyQt6
 - **Green dot**: target position (where iris will be moved)
 - **Yellow arrow**: shift vector with pixel count (e.g., "30px")
 
-Shows on the preview when correction is active, making the correction visible even at small offsets.
+### Temporal Consistency
+
+Lightweight 70/30 blend with previous frame using `cv2.addWeighted`. Eliminates frame-to-frame flicker without noticeable latency.
 
 ## Requirements
 
@@ -245,17 +294,21 @@ All of the above plus:
 | Latency | <2ms | ~5ms |
 | Model size | 0 MB | 1.2 MB |
 | RAM usage | ~50 MB | ~200 MB |
+| Iris segmenter | 55K params, 2ms | — |
 
 ## Troubleshooting
 
-### "Looking away" when looking at camera
-- Run **Interactive Calibration** to calibrate to your eye position
-- Increase **Correction Amplification** to 4.0x-5.0x
+### Camera not working
+- Close other apps using the camera (browser, Zoom, etc.)
+- Select a different camera from the dropdown
+- Click "Restart Camera" to retry
 
 ### Correction not visible
 - Enable **Compare: Original vs Corrected** to see side-by-side
-- Check the **iris overlay** (red/green dots) to see shift amount
+- Press **D** for Demo mode to see dramatic correction
+- Check the **Shift: XXpx** in status bar
 - Increase **Correction Strength** to 100%
+- Run **Interactive Calibration** to calibrate to your eyes
 
 ### Low FPS
 - Close other applications using camera
@@ -265,6 +318,16 @@ All of the above plus:
 ### Neural model not available
 - Click **"Train Model"** in the app, or
 - Run `python train.py --collect` then `python train.py --train`
+
+### Virtual camera not working
+- Install pyvirtualcam: `pip install pyvirtualcam`
+- Install OBS Studio (provides the virtual camera backend)
+
+## Version
+
+Current version: **1.1.0**
+
+Press **Ctrl+A** or click "About OpenBroadcast" for version info.
 
 ## License
 
