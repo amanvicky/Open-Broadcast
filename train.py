@@ -40,7 +40,24 @@ def collect_data(args):
         print(f"[Collect] Processing video: {args.video}")
         pairs = dataset.generate_from_video(args.video, max_frames=args.max_frames)
     else:
-        print("[Collect] Capturing from webcam (move your head around for variety)...")
+        # Guided collection: prompt user to look in specific directions
+        directions = [
+            ("Look straight at camera", 3),
+            ("Look LEFT (15-20 degrees)", 3),
+            ("Look RIGHT (15-20 degrees)", 3),
+            ("Look UP (10-15 degrees)", 3),
+            ("Look DOWN (10-15 degrees)", 3),
+            ("Look LEFT and UP", 2),
+            ("Look RIGHT and DOWN", 2),
+            ("Move your head around naturally", 5),
+        ]
+
+        if args.guided:
+            print("[Collect] Guided collection mode")
+            print("[Collect] Follow the prompts. Keep your face in frame.")
+        else:
+            print("[Collect] Free capture mode (use --guided for prompts)")
+
         cap = cv2.VideoCapture(0)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
@@ -48,32 +65,65 @@ def collect_data(args):
         pairs = []
         frame_count = 0
 
-        while frame_count < args.max_frames:
-            ret, frame = cap.read()
-            if not ret:
-                continue
+        if args.guided:
+            import time
+            for direction, duration in directions:
+                print(f"\n  >>> {direction} (for {duration} seconds)")
+                print("      3... 2... 1... GO!")
+                time.sleep(1)
 
-            landmarks = detector.detect(frame)
-            if landmarks is None:
-                continue
+                end_time = time.time() + duration
+                dir_pairs = 0
+                while time.time() < end_time:
+                    ret, frame = cap.read()
+                    if not ret:
+                        continue
 
-            eye_data = detector.get_eye_data(landmarks, frame.shape)
-            frame_pairs = dataset.generate_pair(frame, eye_data)
+                    landmarks = detector.detect(frame)
+                    if landmarks is None:
+                        continue
 
-            for input_patch, target_patch, offset in frame_pairs:
-                # Apply augmentation
-                aug_input, aug_target, aug_offset = dataset.augment(
-                    input_patch, target_patch, offset
-                )
-                pairs.append({
-                    "input": aug_input,
-                    "target": aug_target,
-                    "offset": aug_offset,
-                })
+                    eye_data = detector.get_eye_data(landmarks, frame.shape)
+                    frame_pairs = dataset.generate_pair(frame, eye_data)
 
-            frame_count += 1
-            if frame_count % 100 == 0:
-                print(f"  Processed {frame_count} frames, {len(pairs)} pairs collected")
+                    for input_patch, target_patch, offset in frame_pairs:
+                        aug_input, aug_target, aug_offset = dataset.augment(
+                            input_patch, target_patch, offset
+                        )
+                        pairs.append({
+                            "input": aug_input,
+                            "target": aug_target,
+                            "offset": aug_offset,
+                        })
+                        dir_pairs += 1
+
+                print(f"      Collected {dir_pairs} pairs")
+        else:
+            while frame_count < args.max_frames:
+                ret, frame = cap.read()
+                if not ret:
+                    continue
+
+                landmarks = detector.detect(frame)
+                if landmarks is None:
+                    continue
+
+                eye_data = detector.get_eye_data(landmarks, frame.shape)
+                frame_pairs = dataset.generate_pair(frame, eye_data)
+
+                for input_patch, target_patch, offset in frame_pairs:
+                    aug_input, aug_target, aug_offset = dataset.augment(
+                        input_patch, target_patch, offset
+                    )
+                    pairs.append({
+                        "input": aug_input,
+                        "target": aug_target,
+                        "offset": aug_offset,
+                    })
+
+                frame_count += 1
+                if frame_count % 100 == 0:
+                    print(f"  Processed {frame_count} frames, {len(pairs)} pairs collected")
 
         cap.release()
 
@@ -234,6 +284,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train GazeCorrectionNet")
     parser.add_argument("--collect", action="store_true", help="Collect training data")
     parser.add_argument("--train", action="store_true", help="Train the model")
+    parser.add_argument("--guided", action="store_true", help="Guided collection with direction prompts")
     parser.add_argument("--video", type=str, help="Video file for data collection")
     parser.add_argument("--output", type=str, default="data/training_pairs.npz",
                         help="Output path for collected data")

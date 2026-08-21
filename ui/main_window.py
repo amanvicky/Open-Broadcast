@@ -52,6 +52,19 @@ class MainWindow(QMainWindow):
         self._virtcam_writer = None
         self._neural_corrector = None
         self._use_neural = False
+        self._wizard_active = False
+        self._wizard_step = 0
+        self._wizard_positions = [
+            (0.3, 0.5),   # Left
+            (0.7, 0.5),   # Right
+            (0.5, 0.3),   # Up
+            (0.5, 0.7),   # Down
+            (0.5, 0.5),   # Center
+            (0.3, 0.3),   # Left-Up
+            (0.7, 0.7),   # Right-Down
+            (0.5, 0.5),   # Center again
+        ]
+        self._wizard_gaze_samples = []
 
         # Try to load neural model
         model_path = os.path.join(os.path.dirname(__file__), '..', 'models', 'gaze_correction.pth')
@@ -95,6 +108,7 @@ class MainWindow(QMainWindow):
         self.control_panel.compare_mode_toggled.connect(self._on_compare_toggled)
         self.control_panel.landmarks_toggled.connect(self._on_landmarks_toggled)
         self.control_panel.calibrate_clicked.connect(self._on_calibrate_clicked)
+        self.control_panel.wizard_clicked.connect(self._on_wizard_clicked)
         self.control_panel.virtual_cam_toggled.connect(self._on_virtual_cam_toggled)
         self.control_panel.mode_changed.connect(self._on_mode_changed)
 
@@ -131,6 +145,7 @@ class MainWindow(QMainWindow):
             self.last_landmarks = None
             self.preview.update_frame(frame)
             self.preview.set_gaze_info(None)
+            self.preview.set_eye_data(None)
             self.statusBar().showMessage("No face detected")
             self.preview.set_fps(self.fps_counter.fps)
             return
@@ -166,6 +181,7 @@ class MainWindow(QMainWindow):
 
         # Display
         self.preview.update_frame(frame, display_frame)
+        self.preview.set_eye_data(eye_data)
 
         self.preview.set_fps(self.fps_counter.fps)
         self.preview.set_gaze_info({
@@ -218,6 +234,73 @@ class MainWindow(QMainWindow):
             self._calibrating = True
             self.control_panel.set_calibrate_status("Looking at camera...")
             self.control_panel.calibrate_btn.setText("Stop Calibration")
+
+    def _on_wizard_clicked(self):
+        if self._wizard_active:
+            # Stop wizard
+            self._wizard_active = False
+            self.preview.set_wizard_dot(None)
+            self.control_panel.wizard_btn.setText("Interactive Calibration")
+            self.control_panel.set_calibrate_status(
+                f"Collected {len(self._wizard_gaze_samples)} samples"
+            )
+            # Apply calibration if we have enough samples
+            if len(self._wizard_gaze_samples) >= 10:
+                samples = np.array(self._wizard_gaze_samples)
+                self.gaze_estimator.calibration_offset_yaw = float(np.mean(samples[:, 0]))
+                self.gaze_estimator.calibration_offset_pitch = float(np.mean(samples[:, 1]))
+                self.control_panel.set_calibrate_status("Calibrated!")
+            self._wizard_gaze_samples = []
+        else:
+            # Start wizard
+            self._wizard_active = True
+            self._wizard_step = 0
+            self._wizard_gaze_samples = []
+            self.control_panel.wizard_btn.setText("Stop Wizard")
+            self.control_panel.set_calibrate_status("Follow the dot...")
+            self._update_wizard_dot()
+
+    def _update_wizard_dot(self):
+        if not self._wizard_active:
+            return
+        if self._wizard_step >= len(self._wizard_positions):
+            # Wizard complete
+            self._wizard_active = False
+            self.preview.set_wizard_dot(None)
+            self.control_panel.wizard_btn.setText("Interactive Calibration")
+            if len(self._wizard_gaze_samples) >= 10:
+                samples = np.array(self._wizard_gaze_samples)
+                self.gaze_estimator.calibration_offset_yaw = float(np.mean(samples[:, 0]))
+                self.gaze_estimator.calibration_offset_pitch = float(np.mean(samples[:, 1]))
+                self.control_panel.set_calibrate_status("Calibrated!")
+            self._wizard_gaze_samples = []
+            return
+
+        # Show dot at next position
+        x, y = self._wizard_positions[self._wizard_step]
+        self.preview.set_wizard_dot((x, y))
+        self.control_panel.set_calibrate_status(
+            f"Step {self._wizard_step + 1}/{len(self._wizard_positions)}: Look at the dot"
+        )
+
+        # After 2 seconds, collect samples and move to next position
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(2000, self._wizard_collect_and_advance)
+
+    def _wizard_collect_and_advance(self):
+        if not self._wizard_active:
+            return
+        # Collect current gaze offset as calibration sample
+        if self.last_landmarks is not None:
+            eye_data = self.face_detector.get_eye_data(self.last_landmarks, (480, 640))
+            left = eye_data["left_eye"]
+            right = eye_data["right_eye"]
+            avg_x = (left["offset_x"] + right["offset_x"]) / 2
+            avg_y = (left["offset_y"] + right["offset_y"]) / 2
+            self._wizard_gaze_samples.append((avg_x, avg_y))
+
+        self._wizard_step += 1
+        self._update_wizard_dot()
 
     def _on_mode_changed(self, index):
         self._use_neural = (index == 1 and self._neural_corrector is not None)

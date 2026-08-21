@@ -14,7 +14,9 @@ class PreviewWidget(QWidget):
         self.fps = 0.0
         self.correction_enabled = True
         self.gaze_info = None
+        self.eye_data = None
         self.compare_mode = False
+        self.wizard_dot = None  # (x, y) normalized 0-1
         self.setMinimumSize(320, 240)
 
     def update_frame(self, frame, overlay=None):
@@ -30,6 +32,13 @@ class PreviewWidget(QWidget):
 
     def set_compare_mode(self, enabled):
         self.compare_mode = enabled
+        self.update()
+
+    def set_eye_data(self, eye_data):
+        self.eye_data = eye_data
+
+    def set_wizard_dot(self, pos):
+        self.wizard_dot = pos
         self.update()
 
     def paintEvent(self, event):
@@ -54,6 +63,10 @@ class PreviewWidget(QWidget):
         self._draw_status(painter)
         if self.gaze_info:
             self._draw_gaze(painter)
+        if self.eye_data and not self.compare_mode:
+            self._draw_iris_overlay(painter)
+        if self.wizard_dot:
+            self._draw_wizard_dot(painter)
 
         painter.end()
 
@@ -127,6 +140,71 @@ class PreviewWidget(QWidget):
         painter.drawRoundedRect(10, 10, tw, th, 4, 4)
         painter.setPen(color)
         painter.drawText(18, 10 + fm.ascent() + 4, text)
+
+    def _draw_wizard_dot(self, painter):
+        """Draw a moving calibration dot for the interactive wizard."""
+        x, y = self.wizard_dot
+        px = int(x * self.width())
+        py = int(y * self.height())
+
+        # Outer glow
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(0, 200, 255, 60))
+        painter.drawEllipse(px - 30, py - 30, 60, 60)
+
+        # Inner dot
+        painter.setBrush(QColor(0, 200, 255, 220))
+        painter.drawEllipse(px - 12, py - 12, 24, 24)
+
+        # Center
+        painter.setBrush(QColor(255, 255, 255, 255))
+        painter.drawEllipse(px - 4, py - 4, 8, 8)
+
+    def _draw_iris_overlay(self, painter):
+        """Draw iris position, target, and shift arrow."""
+        for side in ("left", "right"):
+            eye = self.eye_data.get(f"{side}_eye")
+            if not eye:
+                continue
+            iris = eye["iris"]
+            center = eye["center"]
+            width = eye["width"]
+            if width < 15:
+                continue
+
+            # Scale from frame coords to widget coords
+            frame_h, frame_w = 480, 640
+            widget_w, widget_h = self.width(), self.height()
+            sx = widget_w / frame_w
+            sy = widget_h / frame_h
+
+            # Current iris position (red dot)
+            ix = int(iris[0] * sx)
+            iy = int(iris[1] * sy)
+            painter.setPen(QColor(255, 50, 50))
+            painter.setBrush(QColor(255, 50, 50, 180))
+            painter.drawEllipse(ix - 5, iy - 5, 10, 10)
+
+            # Target position (green dot)
+            tx = int(center[0] * sx)
+            ty = int(center[1] * sy + 0.21 * width * sy)
+            painter.setPen(QColor(0, 255, 100))
+            painter.setBrush(QColor(0, 255, 100, 180))
+            painter.drawEllipse(tx - 5, ty - 5, 10, 10)
+
+            # Shift arrow (yellow)
+            import math
+            dx = tx - ix
+            dy = ty - iy
+            dist = math.sqrt(dx * dx + dy * dy)
+            if dist > 2:
+                painter.setPen(QColor(255, 255, 0, 200))
+                painter.drawLine(ix, iy, tx, ty)
+                # Shift label
+                label = f"{dist:.0f}px"
+                painter.setFont(QFont("Consolas", 9))
+                painter.setPen(QColor(255, 255, 0))
+                painter.drawText((ix + tx) // 2 + 5, (iy + ty) // 2 - 5, label)
 
     def _draw_gaze(self, painter):
         info = self.gaze_info

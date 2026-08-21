@@ -108,6 +108,7 @@ class FaceDetector:
         self.frame_count = 0
         self.last_landmarks = None
         self.last_result = None
+        self._smoothed_iris = {}  # EMA smoothed iris positions
 
     def detect(self, frame):
         """
@@ -142,10 +143,9 @@ class FaceDetector:
         if result.face_landmarks and len(result.face_landmarks) > 0:
             face_landmarks = result.face_landmarks[0]  # First face
 
-            # Convert to a format compatible with the rest of the code
-            # The old API returned landmarks.landmark[idx] with .x, .y, .z
-            # The new API returns face_landmarks[0][idx] with .x, .y, .z
-            # They are compatible — both have .x, .y, .z attributes
+            # Smooth iris landmarks to reduce jitter
+            self._smooth_iris_landmarks(face_landmarks)
+
             self.last_landmarks = face_landmarks
             self.last_result = result
             return face_landmarks
@@ -267,6 +267,25 @@ class FaceDetector:
         cv2.polylines(output, [right_eye_pts], True, (0, 200, 255), 1)
 
         return output
+
+    def _smooth_iris_landmarks(self, landmarks, alpha=0.5):
+        """Apply EMA smoothing to iris landmarks to reduce jitter."""
+        iris_indices = [468, 469, 470, 471, 472,  # Left iris
+                        473, 474, 475, 476, 477]  # Right iris
+
+        for idx in iris_indices:
+            lm = landmarks[idx]
+            key = idx
+            if key in self._smoothed_iris:
+                prev = self._smoothed_iris[key]
+                # EMA: blend previous and current
+                new_x = alpha * prev[0] + (1 - alpha) * lm.x
+                new_y = alpha * prev[1] + (1 - alpha) * lm.y
+                lm.x = new_x
+                lm.y = new_y
+                self._smoothed_iris[key] = (new_x, new_y)
+            else:
+                self._smoothed_iris[key] = (lm.x, lm.y)
 
     def cleanup(self):
         """Release MediaPipe resources."""

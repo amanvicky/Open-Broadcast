@@ -16,6 +16,7 @@ class ControlPanel(QWidget):
     calibrate_clicked = pyqtSignal()
     virtual_cam_toggled = pyqtSignal(bool)
     mode_changed = pyqtSignal(int)
+    wizard_clicked = pyqtSignal()
 
     def __init__(self, config, parent=None):
         super().__init__(parent)
@@ -129,6 +130,11 @@ class ControlPanel(QWidget):
         self.calibrate_status = QLabel("")
         self.calibrate_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         cgl.addWidget(self.calibrate_status)
+
+        self.wizard_btn = QPushButton("Interactive Calibration")
+        self.wizard_btn.setToolTip("Follow the moving dot to calibrate your gaze")
+        self.wizard_btn.clicked.connect(self.wizard_clicked.emit)
+        cgl.addWidget(self.wizard_btn)
 
         cl.addWidget(cg)
 
