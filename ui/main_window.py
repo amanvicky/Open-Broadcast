@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 
 import os
-from core.camera import CameraThread
+from core.camera import CameraThread, enumerate_cameras
 from core.face_detector import FaceDetector
 from core.gaze_estimator import GeometricGazeEstimator
 from core.eye_corrector import EyeCorrector
@@ -79,7 +79,7 @@ class MainWindow(QMainWindow):
                 print(f'[MainWindow] Could not load neural model: {e}')
 
         self._setup_ui()
-        self._start_camera()
+        self._enumerate_and_start_camera()
         self._setup_shortcuts()
         self._setup_presets()
         self._setup_online_learning()
@@ -134,10 +134,39 @@ class MainWindow(QMainWindow):
 
         self.preview.correction_enabled = self.correction_enabled
 
-    def _start_camera(self):
-        cam_index = self.config.get("camera_index", 0)
+    def _enumerate_and_start_camera(self):
+        """Enumerate available cameras and start the selected one."""
+        self._cameras = enumerate_cameras()
+        self.control_panel.populate_cameras(self._cameras)
+
+        # Select saved camera or default to first
+        saved_index = self.config.get("camera_index", 0)
+        for i, cam in enumerate(self._cameras):
+            if cam["index"] == saved_index:
+                self.control_panel.camera_combo.setCurrentIndex(i)
+                break
+
+        # Connect camera signals
+        self.control_panel.camera_changed.connect(self._on_camera_changed)
+        self.control_panel.camera_restart.connect(self._restart_camera)
+
+        # Start camera
+        self._start_camera(saved_index)
+
+        # Start 5-second timeout — if no frame received, show error
+        self._first_frame_received = False
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(5000, self._check_camera_timeout)
+
+    def _start_camera(self, cam_index=None):
+        if cam_index is None:
+            cam_index = self.config.get("camera_index", 0)
         resolution = self.config.get("processing_resolution", [640, 480])
         w, h = resolution[0], resolution[1]
+
+        # Stop existing camera
+        if hasattr(self, 'camera_thread') and self.camera_thread:
+            self.camera_thread.stop()
 
         self.camera_thread = CameraThread(
             camera_index=cam_index,
@@ -148,7 +177,41 @@ class MainWindow(QMainWindow):
         self.camera_thread.error_occurred.connect(self._on_camera_error)
         self.camera_thread.start()
 
+        self.control_panel.set_camera_status(f"Starting camera {cam_index}...")
+
+    def _on_camera_changed(self, combo_index):
+        """Camera dropdown selection changed."""
+        if combo_index < 0 or combo_index >= len(self._cameras):
+            return
+        cam = self._cameras[combo_index]
+        self.config["camera_index"] = cam["index"]
+        self._first_frame_received = False
+        self._start_camera(cam["index"])
+
+    def _restart_camera(self):
+        """Restart the current camera."""
+        self._first_frame_received = False
+        self._start_camera()
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(5000, self._check_camera_timeout)
+
+    def _check_camera_timeout(self):
+        """Show error if camera never produced a frame."""
+        if not self._first_frame_received:
+            self.control_panel.set_camera_status("Camera timeout!")
+            QMessageBox.warning(
+                self, "Camera Timeout",
+                "No frames received from camera.\n\n"
+                "• Close other apps using the camera (browser, Zoom, etc.)\n"
+                "• Try selecting a different camera from the dropdown\n"
+                "• Click Restart Camera to try again"
+            )
+
     def _on_frame_ready(self, frame, timestamp):
+        if not self._first_frame_received:
+            self._first_frame_received = True
+            cam_index = self.config.get("camera_index", 0)
+            self.control_panel.set_camera_status(f"Camera {cam_index} active")
         self.current_frame = frame
         self.fps_counter.update()
 
@@ -224,6 +287,7 @@ class MainWindow(QMainWindow):
         )
 
     def _on_camera_error(self, message):
+        self.control_panel.set_camera_status("Camera error")
         QMessageBox.critical(self, "Camera Error", message)
 
     def _on_correction_toggled(self, enabled):
@@ -712,7 +776,3 @@ class MainWindow(QMainWindow):
         self._online_pairs = []
         self._online_active = False
         self._online_last_collect = 0
-
-    def _on_frame_ready(self, frame, timestamp):
-        self.current_frame = frame
-        self.fps_counter.update()

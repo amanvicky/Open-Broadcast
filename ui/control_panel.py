@@ -18,6 +18,8 @@ class ControlPanel(QWidget):
     mode_changed = pyqtSignal(int)
     wizard_clicked = pyqtSignal()
     train_clicked = pyqtSignal()
+    camera_changed = pyqtSignal(int)
+    camera_restart = pyqtSignal()
 
     def __init__(self, config, parent=None):
         super().__init__(parent)
@@ -91,6 +93,27 @@ class ControlPanel(QWidget):
         gl.addWidget(self.amp_value)
 
         cl.addWidget(group)
+
+        # Camera group
+        cam_group = QGroupBox("Camera")
+        cam_group.setCheckable(False)
+        cam_gl = QVBoxLayout(cam_group)
+
+        cam_gl.addWidget(QLabel("Camera"))
+        self.camera_combo = QComboBox()
+        self.camera_combo.currentIndexChanged.connect(self._on_camera_changed)
+        cam_gl.addWidget(self.camera_combo)
+
+        self.camera_restart_btn = QPushButton("Restart Camera")
+        self.camera_restart_btn.setToolTip("Try again if camera is stuck")
+        self.camera_restart_btn.clicked.connect(self.camera_restart.emit)
+        cam_gl.addWidget(self.camera_restart_btn)
+
+        self.camera_status = QLabel("")
+        self.camera_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        cam_gl.addWidget(self.camera_status)
+
+        cl.addWidget(cam_group)
 
         # Display group (collapsible)
         dg = QGroupBox("Display")
@@ -220,6 +243,17 @@ class ControlPanel(QWidget):
     def set_mode_available(self, index, available):
         """Enable/disable a mode option."""
         self.mode_combo.setItemData(index, available, Qt.ItemDataRole.UserRole - 1)
+
+    def _on_camera_changed(self, index):
+        if index >= 0:
+            self.camera_changed.emit(index)
+
+    def populate_cameras(self, cameras):
+        """Fill camera dropdown from enumerated list."""
+        self.camera_combo.clear()
+        for cam in cameras:
+            w, h = cam["default_resolution"]
+            self.camera_combo.addItem(f"Camera {cam['index']} ({w}x{h})", cam["index"])
 
     def _on_mode_changed(self, index):
         self.mode_changed.emit(index)
