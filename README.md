@@ -1,28 +1,19 @@
 # OpenBroadcast — Eye Gaze Correction for Low-End PCs
 
-**A complete eye gaze correction application that works without a GPU.**
+**Real-time eye gaze correction that works without a GPU.**
 
 When you're on a video call and reading notes or looking at a second screen, OpenBroadcast corrects your eye gaze in real-time so it appears you're looking straight at the camera.
 
 ## Features
 
 - **Real-time eye gaze correction** — makes eyes appear to look straight at camera
-- **Works on low-end PCs** — no GPU required, runs on CPU only
-- **Auto hardware detection** — detects your PC specs and configures optimal settings
-- **Geometric gaze estimation** — runs in <1ms, no model needed
-- **Optional neural model** — GazeNet-Lite for improved accuracy
+- **Works on low-end PCs** — no GPU required, runs on CPU at 30fps
+- **Two correction modes** — Geometric (fastest) or Neural (best)
+- **Face landmark overlay** — visualize detected eye positions
+- **Gaze calibration** — calibrate to your specific eye position
 - **Virtual camera output** — use with Zoom, Teams, OBS, etc.
+- **Static image testing** — test correction on photos without a webcam
 - **Dark theme UI** — professional broadcast-style interface
-- **Calibration** — calibrate to your specific eye position
-
-## Performance Tiers
-
-| Tier | Hardware | Mode | Resolution | FPS |
-|------|----------|------|-----------|-----|
-| ULTRA_LOW | i3 + 4GB, no GPU | Geometric only | 480p | 15+ |
-| LOW | i5 + 6GB, no GPU | Geometric + smoothing | 480p | 20+ |
-| MEDIUM | i5 + 8GB | Hybrid (geo + neural) | 720p | 25+ |
-| HIGH | i7 + 16GB | Full quality | 1080p | 30+ |
 
 ## Quick Start
 
@@ -39,101 +30,91 @@ pip install -r requirements.txt
 python main.py
 ```
 
-### First Launch
-
-On first launch, the app will:
-1. Detect your hardware (CPU, RAM, GPU, camera)
-2. Classify your PC into a performance tier
-3. Show a wizard with recommended settings
-4. Auto-configure optimal settings
-
 ### Basic Usage
 
 1. **Camera starts automatically** — you'll see your webcam feed
 2. **Correction is enabled by default** — eyes should appear centered
-3. **Adjust strength** — use the slider in the control panel
-4. **Toggle correction** — click ENABLED/DISABLED button
-5. **Calibrate** — click "Calibrate Gaze" and look at camera for 2 seconds
+3. **Enable Compare mode** — checkbox shows original vs corrected side-by-side
+4. **Adjust strength** — use the slider (0-100%)
+5. **Adjust amplification** — multiplier for correction shift (1.0x-5.0x)
+6. **Calibrate** — click "Calibrate Gaze", look at camera for 2 seconds, click Stop
 
 ### Controls
 
 | Control | Description |
 |---------|-------------|
 | Correction Strength | 0-100% — how much to correct gaze |
-| Show Face Landmarks | Display detected face landmarks |
-| Performance Mode | Geometric (fastest) → Hybrid (best) |
+| Correction Amplification | 1.0x-5.0x — multiplier for correction shift |
+| Show Face Landmarks | Display detected eye landmarks overlay |
+| Performance Mode | Geometric (Fastest) or Neural (Best) |
 | Calibrate Gaze | Calibrate to your eye position |
-| Virtual Camera | Output to OBS/Zoom/Teams |
+| Virtual Camera | Output corrected video to OBS/Zoom/Teams |
 
-## Training the Neural Model (Optional)
-
-The geometric mode works without any model. For improved accuracy:
+### Test on Static Image
 
 ```bash
-# 1. Download MPIIFaceGaze dataset
-#    Visit: https://www.mpi-inf.mpg.de/departments/computer-vision-and-machine-learning/
-#    Register and download, then extract to data/raw/mpiigaze/
+# Run correction on a photo (no webcam needed)
+python main.py --test-image photo.jpg --output result.jpg
 
-# 2. Setup dataset
-python -m data.setup_dataset --output_dir data/processed
+# Adjust strength and amplification
+python main.py --test-image photo.jpg --strength 0.9 --amplification 5.0
+```
 
-# 3. Train model (~5 hours on CPU)
-python -m models.train --data_dir data/processed --epochs 100
+## Correction Modes
 
-# 4. Export to ONNX for fast inference
-python -m models.export_onnx --weights models/weights/gaze_net_best.pth
+### Geometric (Fastest)
 
-# 5. Run with neural model
+Default mode. Uses iris transplant — extracts the iris and pastes it at the eye center with feathered blending. No model needed, runs at <2ms per frame.
+
+### Neural (Best)
+
+Optional mode. Uses a trained U-Net (~300K parameters) that generates corrected eye patches. Produces more natural results at small gaze offsets.
+
+#### Training the Neural Model
+
+```bash
+# Step 1: Collect training data from webcam
+# Move your head around for 2 minutes to capture variety
+python train.py --collect
+
+# Step 2: Train the model (~5 minutes on CPU)
+python train.py --train --epochs 50
+
+# Step 3: Run the app — select "Neural (Best)" in Performance Mode
 python main.py
 ```
 
-## Building Windows .exe
+Or collect from a video file:
 
 ```bash
-# Install PyInstaller
-pip install pyinstaller
-
-# Build
-pyinstaller OpenBroadcast.spec
-
-# Result: dist/OpenBroadcast.exe
+python train.py --collect --video path/to/video.mp4
+python train.py --train --epochs 50
 ```
 
 ## Project Structure
 
 ```
 openbroadcast/
-├── main.py                     # Entry point
-├── config.py                   # Settings
+├── main.py                  # Entry point (--test-image support)
+├── config.py                # Settings persistence
+├── train.py                 # Neural model training pipeline
+├── requirements.txt         # Dependencies
 ├── core/
-│   ├── camera.py               # Camera capture
-│   ├── face_detector.py        # MediaPipe face mesh + iris
-│   ├── gaze_estimator.py       # Geometric gaze estimation
-│   ├── eye_corrector.py        # Eye warp correction engine
-│   ├── system_detector.py      # Hardware detection
-│   └── virtual_camera.py       # Virtual camera output
-├── models/
-│   ├── gaze_net.py             # GazeNet-Lite CNN
-│   ├── eye_preprocessor.py     # Eye ROI extraction
-│   ├── train.py                # Training pipeline
-│   └── export_onnx.py          # ONNX export + quantization
-├── data/
-│   ├── dataset.py              # Dataset loader
-│   ├── augmentations.py        # Training augmentations
-│   └── setup_dataset.py        # Dataset download/setup
+│   ├── camera.py            # Webcam capture (QThread)
+│   ├── face_detector.py     # MediaPipe face mesh + iris (478 landmarks)
+│   ├── gaze_estimator.py    # Geometric gaze estimation
+│   ├── eye_corrector.py     # Iris transplant correction
+│   ├── gaze_model.py        # Tiny U-Net for neural correction
+│   └── neural_corrector.py  # Neural model inference wrapper
 ├── ui/
-│   ├── main_window.py          # Main window
-│   ├── preview_widget.py       # Camera preview
-│   ├── control_panel.py        # Settings sidebar
-│   ├── first_run_wizard.py     # First launch wizard
-│   └── styles.py               # Dark theme
+│   ├── main_window.py       # Main window + pipeline orchestration
+│   ├── preview_widget.py    # Camera preview + overlays
+│   ├── control_panel.py     # Settings sidebar
+│   └── styles.py            # Dark theme
 ├── utils/
-│   ├── geometry.py             # Eye geometry math
-│   ├── image_utils.py          # Blending utilities
-│   ├── performance.py          # FPS tracking
-│   └── calibration.py          # Gaze calibration
-└── tests/
-    └── test_core.py            # Component tests
+│   └── performance.py       # FPS counter
+└── models/
+    └── gaze_correction.pth  # Trained neural model (after training)
 ```
 
 ## How It Works
@@ -141,10 +122,10 @@ openbroadcast/
 ### Pipeline
 
 ```
-Camera → Face Detection → Eye Landmarks → Gaze Estimation → Eye Warp → Display
-  ↓         ↓                ↓                ↓               ↓          ↓
-cv2      MediaPipe         468+10          Geometric        cv2.remap  PyQt6
-         Face Mesh         landmarks       (<1ms)          + blending
+Camera → FaceDetector → GazeEstimator → EyeCorrector → Display
+  ↓         ↓              ↓              ↓             ↓
+cv2      MediaPipe      Geometric      Iris transplant  PyQt6
+         478 landmarks  (<1ms)         or Neural U-Net
 ```
 
 ### Gaze Estimation
@@ -152,15 +133,21 @@ cv2      MediaPipe         468+10          Geometric        cv2.remap  PyQt6
 1. MediaPipe detects 468 face landmarks + 10 iris landmarks (5 per eye)
 2. Iris center position is measured relative to eye corners
 3. Offset from eye center = gaze direction
-4. No neural network needed for basic mode
+4. Head pose is NOT subtracted (unreliable with current landmarks)
 
-### Eye Correction
+### Eye Correction (Geometric)
 
-1. Calculate pixel displacement needed to center the iris
-2. Create distance-weighted displacement map (only eye moves, skin stays)
-3. Apply OpenCV remap (uses SIMD on CPU — very fast)
-4. Blend corrected region back with feathered mask
-5. Optional color correction in LAB color space
+1. Calculate pixel displacement to move iris to eye center
+2. Extract iris region with feathered circular mask
+3. Paste iris at new position with alpha blending
+4. EMA smoothing prevents jitter across frames
+
+### Eye Correction (Neural)
+
+1. Extract 64×64 eye patch centered on eye socket
+2. Feed patch + offset vector through U-Net
+3. Model predicts corrected eye patch
+4. Blend result back into frame with feathered mask
 
 ## Requirements
 
@@ -170,18 +157,22 @@ cv2      MediaPipe         468+10          Geometric        cv2.remap  PyQt6
 - MediaPipe
 - PyQt6
 - NumPy
-- psutil
 
-### Full (Neural Model)
+### Full (Neural Mode)
 All of the above plus:
-- PyTorch (training only)
-- ONNX Runtime (inference)
-- py-cpuinfo
+- PyTorch (training + inference)
 
 ### Optional
 - pyvirtualcam (virtual camera output)
-- WMI (Windows hardware detection)
-- screeninfo (display detection)
+
+## Performance
+
+| Metric | Geometric | Neural |
+|--------|-----------|--------|
+| FPS (i5 CPU) | 30 fps | 25 fps |
+| Latency | <2ms | ~5ms |
+| Model size | 0 MB | 1.2 MB |
+| RAM usage | ~50 MB | ~200 MB |
 
 ## License
 
