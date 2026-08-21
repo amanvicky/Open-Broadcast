@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 
+import os
 from core.camera import CameraThread
 from core.face_detector import FaceDetector
 from core.gaze_estimator import GeometricGazeEstimator
@@ -15,6 +16,13 @@ from core.eye_corrector import EyeCorrector
 from utils.performance import FPSCounter
 from ui.preview_widget import PreviewWidget
 from ui.control_panel import ControlPanel
+
+# Try to import neural corrector
+try:
+    from core.neural_corrector import NeuralCorrector
+    HAS_NEURAL = True
+except ImportError:
+    HAS_NEURAL = False
 
 
 class MainWindow(QMainWindow):
@@ -42,6 +50,18 @@ class MainWindow(QMainWindow):
         self._calibrating = False
         self._virtcam_active = False
         self._virtcam_writer = None
+        self._neural_corrector = None
+        self._use_neural = False
+
+        # Try to load neural model
+        model_path = os.path.join(os.path.dirname(__file__), '..', 'models', 'gaze_correction.pth')
+        if HAS_NEURAL and os.path.exists(model_path):
+            try:
+                self._neural_corrector = NeuralCorrector(model_path)
+                self._use_neural = True
+                print('[MainWindow] Neural correction model loaded')
+            except Exception as e:
+                print(f'[MainWindow] Could not load neural model: {e}')
 
         self._setup_ui()
         self._start_camera()
@@ -76,6 +96,11 @@ class MainWindow(QMainWindow):
         self.control_panel.landmarks_toggled.connect(self._on_landmarks_toggled)
         self.control_panel.calibrate_clicked.connect(self._on_calibrate_clicked)
         self.control_panel.virtual_cam_toggled.connect(self._on_virtual_cam_toggled)
+        self.control_panel.mode_changed.connect(self._on_mode_changed)
+
+        # Disable neural option if model not loaded
+        if not self._use_neural:
+            self.control_panel.mode_combo.setItemEnabled(1, False)
 
         # Sync initial values
         self.eye_corrector.strength = self.control_panel.strength_slider.value() / 100.0
@@ -117,7 +142,10 @@ class MainWindow(QMainWindow):
         gaze = self.gaze_estimator.estimate(eye_data)
 
         if self.correction_enabled and not eye_data["is_blinking"]:
-            display_frame = self.eye_corrector.correct_frame(frame, eye_data)
+            if self._use_neural and self._neural_corrector:
+                display_frame = self._neural_corrector.correct_frame(frame, eye_data)
+            else:
+                display_frame = self.eye_corrector.correct_frame(frame, eye_data)
         else:
             display_frame = frame
 
@@ -190,6 +218,9 @@ class MainWindow(QMainWindow):
             self._calibrating = True
             self.control_panel.set_calibrate_status("Looking at camera...")
             self.control_panel.calibrate_btn.setText("Stop Calibration")
+
+    def _on_mode_changed(self, index):
+        self._use_neural = (index == 1 and self._neural_corrector is not None)
 
     def _on_virtual_cam_toggled(self, active):
         if active:

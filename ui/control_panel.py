@@ -15,6 +15,7 @@ class ControlPanel(QWidget):
     landmarks_toggled = pyqtSignal(bool)
     calibrate_clicked = pyqtSignal()
     virtual_cam_toggled = pyqtSignal(bool)
+    mode_changed = pyqtSignal(int)
 
     def __init__(self, config, parent=None):
         super().__init__(parent)
@@ -108,8 +109,9 @@ class ControlPanel(QWidget):
 
         pl.addWidget(QLabel("Mode"))
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["Geometric (Fastest)"])
+        self.mode_combo.addItems(["Geometric (Fastest)", "Neural (Best)"])
         self.mode_combo.setCurrentIndex(0)
+        self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
         pl.addWidget(self.mode_combo)
 
         cl.addWidget(pg)
@@ -173,3 +175,10 @@ class ControlPanel(QWidget):
 
     def set_virtcam_status(self, text):
         self.virtcam_status.setText(text)
+
+    def set_mode_available(self, index, available):
+        """Enable/disable a mode option."""
+        self.mode_combo.setItemData(index, available, Qt.ItemDataRole.UserRole - 1)
+
+    def _on_mode_changed(self, index):
+        self.mode_changed.emit(index)
