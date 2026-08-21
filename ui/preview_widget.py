@@ -4,6 +4,7 @@ import cv2
 from PyQt6.QtWidgets import QWidget
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QImage, QPixmap, QPainter, QColor, QFont
+import math
 
 
 class PreviewWidget(QWidget):
@@ -22,6 +23,7 @@ class PreviewWidget(QWidget):
     def update_frame(self, frame, overlay=None):
         self.current_frame = frame
         self.overlay_frame = overlay
+        self._frame_h, self._frame_w = frame.shape[:2] if frame is not None else (480, 640)
         self.update()
 
     def set_fps(self, fps):
@@ -172,8 +174,9 @@ class PreviewWidget(QWidget):
             if width < 15:
                 continue
 
-            # Scale from frame coords to widget coords
-            frame_h, frame_w = 480, 640
+            # Scale from frame coords to widget coords (use actual frame shape)
+            frame_h = getattr(self, '_frame_h', 480)
+            frame_w = getattr(self, '_frame_w', 640)
             widget_w, widget_h = self.width(), self.height()
             sx = widget_w / frame_w
             sy = widget_h / frame_h
@@ -193,7 +196,6 @@ class PreviewWidget(QWidget):
             painter.drawEllipse(tx - 5, ty - 5, 10, 10)
 
             # Shift arrow (yellow)
-            import math
             dx = tx - ix
             dy = ty - iy
             dist = math.sqrt(dx * dx + dy * dy)
