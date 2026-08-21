@@ -9,3 +9,12 @@ venv/
 .DS_Store
 Thumbs.db
 *.log
+
+# Training data (too large for git)
+data/*.npz
+data/raw/
+data/pairs/
+models/*.pth
+recordings/
+dist/
+installer/output/
