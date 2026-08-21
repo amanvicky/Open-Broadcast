@@ -41,15 +41,24 @@ class IrisSegmentationNet(nn.Module):
         # Bottleneck
         self.bottleneck = self._depthwise_sep_conv(64, 64)
         
-        # Decoder with skip connections
+        # Decoder with skip connections (regular convs for variable input channels)
         self.up3 = nn.ConvTranspose2d(64, 32, 2, stride=2)
-        self.dec3 = self._depthwise_sep_conv(64, 32)  # 32 + 32 skip
+        self.dec3 = nn.Sequential(
+            nn.Conv2d(32 + 64, 32, 3, padding=1, bias=False),  # 32 up + 64 skip = 96
+            nn.BatchNorm2d(32), nn.ReLU(inplace=True),
+        )
         
         self.up2 = nn.ConvTranspose2d(32, 16, 2, stride=2)
-        self.dec2 = self._depthwise_sep_conv(32, 16)  # 16 + 16 skip
+        self.dec2 = nn.Sequential(
+            nn.Conv2d(16 + 32, 16, 3, padding=1, bias=False),  # 16 up + 32 skip = 48
+            nn.BatchNorm2d(16), nn.ReLU(inplace=True),
+        )
         
         self.up1 = nn.ConvTranspose2d(16, 8, 2, stride=2)
-        self.dec1 = self._depthwise_sep_conv(16, 8)   # 8 + 8 skip
+        self.dec1 = nn.Sequential(
+            nn.Conv2d(8 + 16, 8, 3, padding=1, bias=False),   # 8 up + 16 skip = 24
+            nn.BatchNorm2d(8), nn.ReLU(inplace=True),
+        )
         
         # Output: single channel mask
         self.out_conv = nn.Conv2d(8, 1, 1)
