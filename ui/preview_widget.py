@@ -2,7 +2,7 @@
 
 import cv2
 from PyQt6.QtWidgets import QWidget
-from PyQt6.QtCore import Qt, QRect
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QImage, QPixmap, QPainter, QColor, QFont
 
 
@@ -15,7 +15,6 @@ class PreviewWidget(QWidget):
         self.correction_enabled = True
         self.gaze_info = None
         self.compare_mode = False
-        self.eye_data = None
         self.setMinimumSize(320, 240)
 
     def update_frame(self, frame, overlay=None):
@@ -32,9 +31,6 @@ class PreviewWidget(QWidget):
     def set_compare_mode(self, enabled):
         self.compare_mode = enabled
         self.update()
-
-    def set_eye_data(self, eye_data):
-        self.eye_data = eye_data
 
     def paintEvent(self, event):
         painter = QPainter(self)

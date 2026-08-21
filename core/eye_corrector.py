@@ -111,7 +111,7 @@ class EyeCorrector:
 
         # 3. Paste iris at new position with feathered blend
         if iris_patch is not None:
-            self._paste_iris(result, iris_patch, new_ix, new_iy, iris_r, frame)
+            self._paste_iris(result, iris_patch, new_ix, new_iy, iris_r)
 
         return result
 
@@ -136,14 +136,13 @@ class EyeCorrector:
                                 sigmaX=max(1.0, radius * FEATHER_FRAC))
 
         return {"patch": patch, "mask": mask, "origin": (x0, y0),
-                "center": (cx, cy), "radius": radius}
+                "radius": radius}
 
-    def _paste_iris(self, frame, iris_data, new_cx, new_cy, radius, orig_frame):
+    def _paste_iris(self, frame, iris_data, new_cx, new_cy, radius):
         """Paste extracted iris at new position with feathered blending."""
         h, w = frame.shape[:2]
         patch = iris_data["patch"]
         mask = iris_data["mask"]
-        old_ox, old_oy = iris_data["origin"]
         ph, pw = patch.shape[:2]
 
         # New paste region

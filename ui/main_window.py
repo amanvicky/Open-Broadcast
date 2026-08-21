@@ -1,9 +1,8 @@
 """OpenBroadcast — Main Window. Camera → Face → Gaze → Correction → Display."""
 
-import numpy as np
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-    QStatusBar, QMessageBox, QSplitter
+    QMainWindow, QWidget, QHBoxLayout,
+    QMessageBox, QSplitter
 )
 from PyQt6.QtCore import Qt
 
@@ -36,11 +35,6 @@ class MainWindow(QMainWindow):
 
         # State
         self.correction_enabled = True
-        self.compare_mode = False
-        self.current_frame = None
-        self.original_frame = None
-        self.last_landmarks = None
-        self._skip_frame = False
 
         self._setup_ui()
         self._start_camera()
@@ -94,17 +88,13 @@ class MainWindow(QMainWindow):
         self.camera_thread.start()
 
     def _on_frame_ready(self, frame, timestamp):
-        self.current_frame = frame
         self.fps_counter.update()
-        self.original_frame = frame.copy()
 
-        # Face detection (skip every other frame when FPS is low)
         landmarks = self.face_detector.detect(frame)
 
         if landmarks is None:
             self.preview.update_frame(frame)
             self.preview.set_gaze_info(None)
-            self.preview.set_eye_data(None)
             self.statusBar().showMessage("No face detected")
             self.preview.set_fps(self.fps_counter.fps)
             return
@@ -119,13 +109,9 @@ class MainWindow(QMainWindow):
             display_frame = frame
 
         # Display
-        if self.compare_mode:
-            self.preview.update_frame(self.original_frame, display_frame)
-        else:
-            self.preview.update_frame(frame, display_frame)
+        self.preview.update_frame(frame, display_frame)
 
         self.preview.set_fps(self.fps_counter.fps)
-        self.preview.set_eye_data(eye_data)
         self.preview.set_gaze_info({
             "yaw": gaze.yaw,
             "pitch": gaze.pitch,
@@ -155,7 +141,6 @@ class MainWindow(QMainWindow):
         self.eye_corrector.amplification = amp
 
     def _on_compare_toggled(self, enabled):
-        self.compare_mode = enabled
         self.preview.set_compare_mode(enabled)
 
     def closeEvent(self, event):
