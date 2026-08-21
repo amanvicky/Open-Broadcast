@@ -255,6 +255,9 @@ class ControlPanel(QWidget):
             w, h = cam["default_resolution"]
             self.camera_combo.addItem(f"Camera {cam['index']} ({w}x{h})", cam["index"])
 
+    def set_camera_status(self, text):
+        self.camera_status.setText(text)
+
     def _on_mode_changed(self, index):
         self.mode_changed.emit(index)
 
