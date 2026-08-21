@@ -203,9 +203,6 @@ class FaceDetector:
         right_offset_x = (right_iris[0] - right_center[0]) / (right_width + 1e-6)
         right_offset_y = (right_iris[1] - right_center[1]) / (right_width + 1e-6)
 
-        # Head pose estimation using solvePnP
-        head_yaw, head_pitch = self._estimate_head_pose(landmarks, frame_shape)
-
         return {
             "left_eye": {
                 "outer": left_outer,
@@ -233,8 +230,6 @@ class FaceDetector:
             },
             "is_blinking": is_blinking,
             "eye_ratio": avg_eye_ratio,
-            "head_yaw": head_yaw,
-            "head_pitch": head_pitch,
         }
 
     def draw_landmarks(self, frame, landmarks):
@@ -272,58 +267,6 @@ class FaceDetector:
         cv2.polylines(output, [right_eye_pts], True, (0, 200, 255), 1)
 
         return output
-
-    def _estimate_head_pose(self, landmarks, frame_shape):
-        """Estimate head yaw and pitch from face landmarks using solvePnP."""
-        h, w = frame_shape[:2]
-
-        # 2D image points from MediaPipe landmarks
-        image_pts = np.array([
-            [landmarks[1].x * w, landmarks[1].y * h],    # Nose tip
-            [landmarks[152].x * w, landmarks[152].y * h], # Chin
-            [landmarks[33].x * w, landmarks[33].y * h],   # Left eye left corner
-            [landmarks[263].x * w, landmarks[263].y * h], # Right eye right corner
-            [landmarks[61].x * w, landmarks[61].y * h],   # Left mouth corner
-            [landmarks[291].x * w, landmarks[291].y * h], # Right mouth corner
-        ], dtype=np.float64)
-
-        # Generic 3D face model points (mm)
-        model_pts = np.array([
-            [0.0, 0.0, 0.0],         # Nose tip
-            [0.0, -63.6, -12.5],      # Chin
-            [-43.3, 32.7, -26.0],     # Left eye left corner
-            [43.3, 32.7, -26.0],      # Right eye right corner
-            [-28.9, -28.9, -24.1],    # Left mouth corner
-            [28.9, -28.9, -24.1],     # Right mouth corner
-        ], dtype=np.float64)
-
-        # Camera internals (approximate for webcam)
-        focal_length = w
-        center = (w / 2, h / 2)
-        camera_matrix = np.array([
-            [focal_length, 0, center[0]],
-            [0, focal_length, center[1]],
-            [0, 0, 1]
-        ], dtype=np.float64)
-
-        dist_coeffs = np.zeros((4, 1))
-
-        try:
-            success, rvec, tvec = cv2.solvePnP(
-                model_pts, image_pts, camera_matrix, dist_coeffs,
-                flags=cv2.SOLVEPNP_ITERATIVE
-            )
-            if not success:
-                return 0.0, 0.0
-
-            # Convert rotation vector to angles
-            rmat, _ = cv2.Rodrigues(rvec)
-            # yaw = arcsin(rmat[0, 2]), pitch = atan2(-rmat[1, 2], rmat[2, 2])
-            head_yaw = np.degrees(np.arcsin(np.clip(rmat[0, 2], -1, 1)))
-            head_pitch = np.degrees(np.arctan2(-rmat[1, 2], rmat[2, 2]))
-            return float(head_yaw), float(head_pitch)
-        except Exception:
-            return 0.0, 0.0
 
     def cleanup(self):
         """Release MediaPipe resources."""

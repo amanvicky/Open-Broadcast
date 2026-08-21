@@ -35,6 +35,6 @@ def get_default_config():
         "camera_index": 0,
         "processing_resolution": [640, 480],
         "correction_strength": 0.85,
-        "amplification": 1.0,
+        "amplification": 4.0,
         "first_run": True,
     }

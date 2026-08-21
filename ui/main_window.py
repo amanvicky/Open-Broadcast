@@ -139,6 +139,7 @@ class MainWindow(QMainWindow):
 
     def _on_amplification_changed(self, amp):
         self.eye_corrector.amplification = amp
+        self.config["amplification"] = amp
 
     def _on_compare_toggled(self, enabled):
         self.preview.set_compare_mode(enabled)

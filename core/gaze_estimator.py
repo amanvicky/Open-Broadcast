@@ -103,18 +103,6 @@ class GeometricGazeEstimator:
         avg_offset_x = (left["offset_x"] + right["offset_x"]) / 2
         avg_offset_y = (left["offset_y"] + right["offset_y"]) / 2
 
-        # Subtract head pose to get pure eye rotation
-        # Head yaw rotates the face, which shifts iris relative to eye corners
-        # but doesn't change gaze direction. Subtract it.
-        head_yaw = eye_data.get("head_yaw", 0.0)
-        head_pitch = eye_data.get("head_pitch", 0.0)
-
-        # Empirical mapping: head yaw of 30° shifts iris offset by ~0.5
-        head_offset_x = head_yaw / 60.0
-        head_offset_y = head_pitch / 60.0
-        avg_offset_x -= head_offset_x
-        avg_offset_y -= head_offset_y
-
         # Apply calibration offset
         avg_offset_x -= self.calibration_offset_yaw
         avg_offset_y -= self.calibration_offset_pitch
