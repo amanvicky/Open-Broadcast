@@ -1,5 +1,7 @@
 """OpenBroadcast — Main Window. Camera → Face → Gaze → Correction → Display."""
 
+import cv2
+import numpy as np
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout,
     QMessageBox, QSplitter
@@ -35,6 +37,11 @@ class MainWindow(QMainWindow):
 
         # State
         self.correction_enabled = True
+        self.show_landmarks = False
+        self.last_landmarks = None
+        self._calibrating = False
+        self._virtcam_active = False
+        self._virtcam_writer = None
 
         self._setup_ui()
         self._start_camera()
@@ -66,6 +73,9 @@ class MainWindow(QMainWindow):
         self.control_panel.strength_changed.connect(self._on_strength_changed)
         self.control_panel.amplification_changed.connect(self._on_amplification_changed)
         self.control_panel.compare_mode_toggled.connect(self._on_compare_toggled)
+        self.control_panel.landmarks_toggled.connect(self._on_landmarks_toggled)
+        self.control_panel.calibrate_clicked.connect(self._on_calibrate_clicked)
+        self.control_panel.virtual_cam_toggled.connect(self._on_virtual_cam_toggled)
 
         # Sync initial values
         self.eye_corrector.strength = self.control_panel.strength_slider.value() / 100.0
@@ -93,11 +103,14 @@ class MainWindow(QMainWindow):
         landmarks = self.face_detector.detect(frame)
 
         if landmarks is None:
+            self.last_landmarks = None
             self.preview.update_frame(frame)
             self.preview.set_gaze_info(None)
             self.statusBar().showMessage("No face detected")
             self.preview.set_fps(self.fps_counter.fps)
             return
+
+        self.last_landmarks = landmarks
 
         # Eye data → gaze → correction
         eye_data = self.face_detector.get_eye_data(landmarks, frame.shape)
@@ -107,6 +120,21 @@ class MainWindow(QMainWindow):
             display_frame = self.eye_corrector.correct_frame(frame, eye_data)
         else:
             display_frame = frame
+
+        # Draw landmarks on display if enabled
+        if self.show_landmarks:
+            display_frame = self.face_detector.draw_landmarks(display_frame, landmarks)
+
+        # Calibration mode: collect samples
+        if self._calibrating:
+            self.gaze_estimator.add_calibration_sample(eye_data)
+
+        # Virtual camera output
+        if self._virtcam_active and self._virtcam_writer is not None:
+            try:
+                self._virtcam_writer.write(display_frame)
+            except Exception:
+                pass
 
         # Display
         self.preview.update_frame(frame, display_frame)
@@ -143,6 +171,52 @@ class MainWindow(QMainWindow):
 
     def _on_compare_toggled(self, enabled):
         self.preview.set_compare_mode(enabled)
+
+    def _on_landmarks_toggled(self, enabled):
+        self.show_landmarks = enabled
+
+    def _on_calibrate_clicked(self):
+        if self._calibrating:
+            # Finish calibration
+            success = self.gaze_estimator.finish_calibration()
+            self._calibrating = False
+            self.control_panel.set_calibrate_status(
+                "Calibrated!" if success else "Not enough samples"
+            )
+            self.control_panel.calibrate_btn.setText("Calibrate Gaze")
+        else:
+            # Start calibration
+            self.gaze_estimator.start_calibration()
+            self._calibrating = True
+            self.control_panel.set_calibrate_status("Looking at camera...")
+            self.control_panel.calibrate_btn.setText("Stop Calibration")
+
+    def _on_virtual_cam_toggled(self, active):
+        if active:
+            try:
+                import pyvirtualcam
+                self._virtcam_writer = pyvirtualcam.Camera(
+                    width=640, height=480, fps=30
+                )
+                self._virtcam_active = True
+                self.control_panel.set_virtcam_status(
+                    f"Outputting to: {self._virtcam_writer.device}"
+                )
+            except ImportError:
+                self.control_panel.set_virtcam_status("pip install pyvirtualcam")
+                self.control_panel.virtcam_btn.setChecked(False)
+            except Exception as e:
+                self.control_panel.set_virtcam_status(str(e)[:50])
+                self.control_panel.virtcam_btn.setChecked(False)
+        else:
+            self._virtcam_active = False
+            if self._virtcam_writer:
+                try:
+                    self._virtcam_writer.close()
+                except Exception:
+                    pass
+                self._virtcam_writer = None
+            self.control_panel.set_virtcam_status("")
 
     def closeEvent(self, event):
         if hasattr(self, "camera_thread") and self.camera_thread:

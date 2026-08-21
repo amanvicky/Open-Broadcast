@@ -2,7 +2,7 @@
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QPushButton,
-    QSlider, QCheckBox, QGroupBox, QScrollArea
+    QSlider, QCheckBox, QGroupBox, QScrollArea, QComboBox
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
@@ -12,6 +12,9 @@ class ControlPanel(QWidget):
     strength_changed = pyqtSignal(float)
     amplification_changed = pyqtSignal(float)
     compare_mode_toggled = pyqtSignal(bool)
+    landmarks_toggled = pyqtSignal(bool)
+    calibrate_clicked = pyqtSignal()
+    virtual_cam_toggled = pyqtSignal(bool)
 
     def __init__(self, config, parent=None):
         super().__init__(parent)
@@ -93,7 +96,56 @@ class ControlPanel(QWidget):
         self.compare_cb.toggled.connect(self.compare_mode_toggled.emit)
         dl.addWidget(self.compare_cb)
 
+        self.landmarks_cb = QCheckBox("Show Face Landmarks")
+        self.landmarks_cb.toggled.connect(self.landmarks_toggled.emit)
+        dl.addWidget(self.landmarks_cb)
+
         cl.addWidget(dg)
+
+        # Performance group
+        pg = QGroupBox("Performance")
+        pl = QVBoxLayout(pg)
+
+        pl.addWidget(QLabel("Mode"))
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItems(["Geometric (Fastest)"])
+        self.mode_combo.setCurrentIndex(0)
+        pl.addWidget(self.mode_combo)
+
+        cl.addWidget(pg)
+
+        # Calibration group
+        cg = QGroupBox("Calibration")
+        cgl = QVBoxLayout(cg)
+
+        self.calibrate_btn = QPushButton("Calibrate Gaze")
+        self.calibrate_btn.setObjectName("calibrate_btn")
+        self.calibrate_btn.setToolTip("Look at camera for 2 seconds, then click")
+        self.calibrate_btn.clicked.connect(self.calibrate_clicked.emit)
+        cgl.addWidget(self.calibrate_btn)
+
+        self.calibrate_status = QLabel("")
+        self.calibrate_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        cgl.addWidget(self.calibrate_status)
+
+        cl.addWidget(cg)
+
+        # Virtual Camera group
+        vg = QGroupBox("Output")
+        vl = QVBoxLayout(vg)
+
+        self.virtcam_btn = QPushButton("Virtual Camera: OFF")
+        self.virtcam_btn.setObjectName("virtual_cam_btn")
+        self.virtcam_btn.setCheckable(True)
+        self.virtcam_btn.setToolTip("Output corrected video to OBS/Zoom/Teams")
+        self.virtcam_btn.clicked.connect(self._on_virtcam)
+        vl.addWidget(self.virtcam_btn)
+
+        self.virtcam_status = QLabel("")
+        self.virtcam_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        vl.addWidget(self.virtcam_status)
+
+        cl.addWidget(vg)
 
         cl.addStretch()
         scroll.setWidget(content)
@@ -111,3 +163,13 @@ class ControlPanel(QWidget):
         amp = value / 100.0
         self.amp_value.setText(f"{amp:.1f}x")
         self.amplification_changed.emit(amp)
+
+    def _on_virtcam(self, checked):
+        self.virtcam_btn.setText("Virtual Camera: ON" if checked else "Virtual Camera: OFF")
+        self.virtual_cam_toggled.emit(checked)
+
+    def set_calibrate_status(self, text):
+        self.calibrate_status.setText(text)
+
+    def set_virtcam_status(self, text):
+        self.virtcam_status.setText(text)
