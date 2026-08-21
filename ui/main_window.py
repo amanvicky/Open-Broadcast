@@ -68,8 +68,6 @@ class MainWindow(QMainWindow):
         self._virtcam_writer = None
         self._neural_corrector = None
         self._use_neural = False
-        self._demo_mode = False  # Simulate 20-degree offset for demo
-        self._correction_shift = 0.0  # Last computed shift in pixels
         self._wizard_active = False
         self._wizard_step = 0
         self._wizard_positions = [
@@ -150,9 +148,6 @@ class MainWindow(QMainWindow):
         self.control_panel.mode_changed.connect(self._on_mode_changed)
         self.control_panel.train_clicked.connect(self._on_train_clicked)
         self.control_panel.record_toggled.connect(self._on_record_toggled)
-        self.control_panel.demo_cb.toggled.connect(lambda: self._toggle_demo())
-        self.control_panel.batch_btn.clicked.connect(self._batch_process_video)
-        self.control_panel.about_btn.clicked.connect(self._show_about)
 
         # Remove neural option if model not loaded
         if not self._use_neural:
@@ -279,36 +274,13 @@ class MainWindow(QMainWindow):
                     eye["offset_x"] -= cal_yaw
                     eye["offset_y"] -= cal_pitch
 
-        # Demo mode: simulate 20-degree offset to prove correction works
-        if self._demo_mode and not eye_data["is_blinking"]:
-            for side in ("left", "right"):
-                eye = eye_data[f"{side}_eye"]
-                eye_width = float(eye["width"])
-                if eye_width > 10:
-                    eye["iris"] = eye["iris"].copy()
-                    eye["iris"][0] += 0.35 * eye_width  # Simulate 20° right gaze
-                    eye["offset_x"] += 0.35
-
-        # Track iris positions before correction for quality score
-        _pre_iris = {}
-        for side in ("left", "right"):
-            _pre_iris[side] = eye_data[f"{side}_eye"]["iris"].copy()
-
         if self.correction_enabled and not eye_data["is_blinking"]:
             if self._use_neural and self._neural_corrector:
                 display_frame = self._neural_corrector.correct_frame(frame, eye_data)
             else:
                 display_frame = self.eye_corrector.correct_frame(frame, eye_data)
-            # Compute correction shift for quality score
-            shift_sum = 0.0
-            for side in ("left", "right"):
-                old = _pre_iris[side]
-                new = eye_data[f"{side}_eye"]["iris"]
-                shift_sum += float(np.linalg.norm(new - old))
-            self._correction_shift = shift_sum / 2.0
         else:
             display_frame = frame
-            self._correction_shift = 0.0
 
         # Draw landmarks on display if enabled
         if self.show_landmarks:
@@ -366,19 +338,17 @@ class MainWindow(QMainWindow):
             "is_looking_at_camera": gaze.is_looking_at_camera,
         })
 
-        # Status bar with quality score
+        # Status bar
         mode = "ON" if self.correction_enabled else "OFF"
-        demo_info = " [DEMO]" if self._demo_mode else ""
         cal_info = ""
         if self._calibrating:
             cal_info = " | CALIBRATING..."
         elif abs(cal_yaw) > 0.001 or abs(cal_pitch) > 0.001:
             cal_info = " | Calibrated"
-        shift_info = f" | Shift:{self._correction_shift:.0f}px" if self._correction_shift > 1 else ""
         self.statusBar().showMessage(
-            f"Correction:{mode}{demo_info} | "
+            f"Correction:{mode} | "
             f"Y={gaze.yaw:+.1f}° P={gaze.pitch:+.1f}° | "
-            f"FPS:{self.fps_counter.fps:.1f}{cal_info}{shift_info}"
+            f"FPS:{self.fps_counter.fps:.1f}{cal_info}"
         )
 
     def _on_camera_error(self, message):
@@ -867,9 +837,6 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("4"), self, lambda: self._load_preset(3))
         QShortcut(QKeySequence("5"), self, lambda: self._load_preset(4))
         QShortcut(QKeySequence("S"), self, self._save_current_preset)
-        QShortcut(QKeySequence("D"), self, self._toggle_demo)
-        QShortcut(QKeySequence("Ctrl+A"), self, self._show_about)
-        QShortcut(QKeySequence("Ctrl+B"), self, self._batch_process_video)
         QShortcut(QKeySequence("Escape"), self, self.close)
 
     def _toggle_correction(self):
@@ -890,96 +857,6 @@ class MainWindow(QMainWindow):
         checked = not self.control_panel.record_btn.isChecked()
         self.control_panel.record_btn.setChecked(checked)
         self._on_record_toggled(checked)
-
-    def _toggle_demo(self):
-        self._demo_mode = not self._demo_mode
-        self.control_panel.demo_cb.setChecked(self._demo_mode)
-
-    def _show_about(self):
-        QMessageBox.about(self, "About OpenBroadcast",
-            f"<h2>OpenBroadcast v{self._version}</h2>"
-            f"<p>Eye Gaze Correction for Low-End PCs</p>"
-            f"<p>Features:</p>"
-            f"<ul>"
-            f"<li>Real-time eye gaze correction</li>"
-            f"<li>Iris segmentation for precise masks</li>"
-            f"<li>Geometric + Neural correction modes</li>"
-            f"<li>Virtual camera output (OBS/Zoom/Teams)</li>"
-            f"<li>Keyboard shortcuts (Space, C, L, R, D, Esc)</li>"
-            f"</ul>"
-            f"<p>GitHub: github.com/amanvicky/Open-Broadcast</p>"
-        )
-
-    def _batch_process_video(self):
-        """Open a video file, apply correction, save output."""
-        from PyQt6.QtWidgets import QFileDialog
-        input_path, _ = QFileDialog.getOpenFileName(
-            self, "Select Video to Correct",
-            "",
-            "Video Files (*.mp4 *.avi *.mkv *.mov);;All Files (*)"
-        )
-        if not input_path:
-            return
-
-        output_path, _ = QFileDialog.getSaveFileName(
-            self, "Save Corrected Video",
-            os.path.splitext(input_path)[0] + "_corrected.avi",
-            "AVI Files (*.avi);;All Files (*)"
-        )
-        if not output_path:
-            return
-
-        self.control_panel.set_train_status("Processing video...")
-
-        def process():
-            try:
-                cap = cv2.VideoCapture(input_path)
-                if not cap.isOpened():
-                    raise RuntimeError(f"Cannot open {input_path}")
-
-                fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-                w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
-                fourcc = cv2.VideoWriter_fourcc(*"MJPG")
-                writer = cv2.VideoWriter(output_path, fourcc, fps, (w, h))
-
-                frame_num = 0
-                while cap.isOpened():
-                    ret, frame = cap.read()
-                    if not ret:
-                        break
-
-                    landmarks = self.face_detector.detect(frame)
-                    if landmarks is not None:
-                        eye_data = self.face_detector.get_eye_data(landmarks, frame.shape)
-                        if not eye_data["is_blinking"]:
-                            frame = self.eye_corrector.correct_frame(frame, eye_data)
-
-                    writer.write(frame)
-                    frame_num += 1
-
-                    if frame_num % 30 == 0:
-                        pct = frame_num / total * 100 if total > 0 else 0
-                        from PyQt6.QtCore import QTimer
-                        msg = f"Processing: {frame_num}/{total} ({pct:.0f}%)"
-                        QTimer.singleShot(0, lambda m=msg: self.control_panel.set_train_status(m))
-
-                cap.release()
-                writer.release()
-
-                from PyQt6.QtCore import QTimer
-                QTimer.singleShot(0, lambda: self.control_panel.set_train_status(
-                    f"Done! Saved {frame_num} frames to {os.path.basename(output_path)}"))
-                QTimer.singleShot(0, lambda: QMessageBox.information(self, "Batch Complete",
-                    f"Processed {frame_num} frames\nSaved to: {output_path}"))
-            except Exception as e:
-                from PyQt6.QtCore import QTimer
-                QTimer.singleShot(0, lambda: self.control_panel.set_train_status(f"Error: {str(e)[:50]}"))
-
-        import threading
-        threading.Thread(target=process, daemon=True).start()
 
     def _setup_presets(self):
         """Load presets from config."""
