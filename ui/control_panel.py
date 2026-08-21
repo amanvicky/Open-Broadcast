@@ -17,6 +17,7 @@ class ControlPanel(QWidget):
     virtual_cam_toggled = pyqtSignal(bool)
     mode_changed = pyqtSignal(int)
     wizard_clicked = pyqtSignal()
+    train_clicked = pyqtSignal()
 
     def __init__(self, config, parent=None):
         super().__init__(parent)
@@ -155,6 +156,21 @@ class ControlPanel(QWidget):
 
         cl.addWidget(vg)
 
+        # Training group
+        tg = QGroupBox("Neural Training")
+        tgl = QVBoxLayout(tg)
+
+        self.train_btn = QPushButton("Train Model")
+        self.train_btn.setToolTip("Collect data + train neural model (~2 min)")
+        self.train_btn.clicked.connect(self.train_clicked.emit)
+        tgl.addWidget(self.train_btn)
+
+        self.train_status = QLabel("")
+        self.train_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        tgl.addWidget(self.train_status)
+
+        cl.addWidget(tg)
+
         cl.addStretch()
         scroll.setWidget(content)
         layout.addWidget(scroll)
@@ -181,6 +197,9 @@ class ControlPanel(QWidget):
 
     def set_virtcam_status(self, text):
         self.virtcam_status.setText(text)
+
+    def set_train_status(self, text):
+        self.train_status.setText(text)
 
     def set_mode_available(self, index, available):
         """Enable/disable a mode option."""

@@ -65,6 +65,8 @@ class MainWindow(QMainWindow):
             (0.5, 0.5),   # Center again
         ]
         self._wizard_gaze_samples = []
+        self._training_active = False
+        self._train_pairs = []
 
         # Try to load neural model
         model_path = os.path.join(os.path.dirname(__file__), '..', 'models', 'gaze_correction.pth')
@@ -78,6 +80,12 @@ class MainWindow(QMainWindow):
 
         self._setup_ui()
         self._start_camera()
+
+        # Auto-calibration: silently calibrate during first 3 seconds
+        self._auto_cal_samples = []
+        self._auto_cal_active = True
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(3000, self._finish_auto_calibration)
 
     def _setup_ui(self):
         central = QWidget()
@@ -111,6 +119,7 @@ class MainWindow(QMainWindow):
         self.control_panel.wizard_clicked.connect(self._on_wizard_clicked)
         self.control_panel.virtual_cam_toggled.connect(self._on_virtual_cam_toggled)
         self.control_panel.mode_changed.connect(self._on_mode_changed)
+        self.control_panel.train_clicked.connect(self._on_train_clicked)
 
         # Remove neural option if model not loaded
         if not self._use_neural:
@@ -137,6 +146,7 @@ class MainWindow(QMainWindow):
         self.camera_thread.start()
 
     def _on_frame_ready(self, frame, timestamp):
+        self.current_frame = frame
         self.fps_counter.update()
 
         landmarks = self.face_detector.detect(frame)
@@ -171,6 +181,14 @@ class MainWindow(QMainWindow):
         # Calibration mode: collect samples
         if self._calibrating:
             self.gaze_estimator.add_calibration_sample(eye_data)
+
+        # Auto-calibration: collect samples silently on startup
+        if self._auto_cal_active:
+            left = eye_data["left_eye"]
+            right = eye_data["right_eye"]
+            avg_x = (left["offset_x"] + right["offset_x"]) / 2
+            avg_y = (left["offset_y"] + right["offset_y"]) / 2
+            self._auto_cal_samples.append((avg_x, avg_y))
 
         # Virtual camera output
         if self._virtcam_active and self._virtcam_writer is not None:
@@ -301,6 +319,196 @@ class MainWindow(QMainWindow):
 
         self._wizard_step += 1
         self._update_wizard_dot()
+
+    def _finish_auto_calibration(self):
+        """Apply silent auto-calibration from first 3 seconds."""
+        self._auto_cal_active = False
+        if len(self._auto_cal_samples) >= 10:
+            samples = np.array(self._auto_cal_samples)
+            self.gaze_estimator.calibration_offset_yaw = float(np.mean(samples[:, 0]))
+            self.gaze_estimator.calibration_offset_pitch = float(np.mean(samples[:, 1]))
+            print(f"[AutoCal] Calibrated from {len(samples)} samples")
+        self._auto_cal_samples = []
+
+    def _on_train_clicked(self):
+        """Start in-app training: collect data then train model."""
+        if self._training_active:
+            self._training_active = False
+            self.control_panel.train_btn.setText("Train Model")
+            self.control_panel.set_train_status("Stopped")
+            return
+
+        self._training_active = True
+        self.control_panel.train_btn.setText("Stop Training")
+        self.control_panel.set_train_status("Collecting data...")
+
+        # Start guided collection in a timer loop
+        self._train_pairs = []
+        self._train_step = 0
+        self._train_directions = [
+            ("Look straight at camera", 3),
+            ("Look LEFT", 3),
+            ("Look RIGHT", 3),
+            ("Look UP", 2),
+            ("Look DOWN", 2),
+            ("Move head around", 4),
+        ]
+        self._train_collect_start()
+
+    def _train_collect_start(self):
+        if not self._training_active or self._train_step >= len(self._train_directions):
+            self._train_collect_done()
+            return
+
+        direction, duration = self._train_directions[self._train_step]
+        self.control_panel.set_train_status(f"{direction} ({duration}s)")
+        self._train_dir_pairs = []
+        self._train_dir_end = __import__('time').time() + duration
+        self._train_collecting = True
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(100, self._train_collect_frame)
+
+    def _train_collect_frame(self):
+        if not self._training_active or not self._train_collecting:
+            return
+
+        import time
+        if time.time() >= self._train_dir_end:
+            self._train_collecting = False
+            pairs_count = len(self._train_dir_pairs)
+            self._train_pairs.extend(self._train_dir_pairs)
+            self._train_step += 1
+            self.control_panel.set_train_status(
+                f"Collected {len(self._train_pairs)} pairs"
+            )
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(500, self._train_collect_start)
+            return
+
+        # Collect frame from current camera
+        if self.last_landmarks is not None:
+            frame = self.current_frame
+            if frame is not None:
+                eye_data = self.face_detector.get_eye_data(self.last_landmarks, frame.shape)
+                for side in ("left", "right"):
+                    eye = eye_data[f"{side}_eye"]
+                    pupil = np.array(eye["iris"], dtype=np.float32)
+                    socket = np.array(eye["center"], dtype=np.float32)
+                    eye_width = float(eye["width"])
+                    if eye_width < 15 or eye_data["is_blinking"]:
+                        continue
+
+                    offset_x = (pupil[0] - socket[0]) / (eye_width + 1e-6)
+                    offset_y = (pupil[1] - socket[1]) / (eye_width + 1e-6)
+                    if abs(offset_x) < 0.03 and abs(offset_y) < 0.03:
+                        continue
+
+                    cx, cy = int(socket[0]), int(socket[1])
+                    half = 32
+                    h, w = frame.shape[:2]
+                    x0, y0 = max(0, cx - half), max(0, cy - half)
+                    x1, y1 = min(w, cx + half), min(h, cy + half)
+                    if (x1 - x0) < 64 or (y1 - y0) < 64:
+                        continue
+
+                    input_patch = frame[y0:y1, x0:x1].copy()
+                    single_eye = {f"{side}_eye": eye, "is_blinking": False}
+                    corrected = self.eye_corrector._transplant_iris(frame.copy(), single_eye, side)
+                    target_patch = corrected[y0:y1, x0:x1].copy()
+
+                    self._train_dir_pairs.append({
+                        "input": input_patch,
+                        "target": target_patch,
+                        "offset": np.array([offset_x, offset_y], dtype=np.float32),
+                    })
+
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(33, self._train_collect_frame)
+
+    def _train_collect_done(self):
+        """Data collection done, start training."""
+        if len(self._train_pairs) < 100:
+            self.control_panel.set_train_status(f"Need 100+ pairs (got {len(self._train_pairs)})")
+            self._training_active = False
+            self.control_panel.train_btn.setText("Train Model")
+            return
+
+        self.control_panel.set_train_status(f"Training on {len(self._train_pairs)} pairs...")
+
+        # Save pairs and train in background thread
+        import threading
+        def train_thread():
+            try:
+                import torch
+                import torch.nn as nn
+                from torch.utils.data import DataLoader, TensorDataset
+                from core.gaze_model import GazeCorrectionNet
+
+                # Save data
+                os.makedirs("data", exist_ok=True)
+                inputs = np.stack([p["input"] for p in self._train_pairs]).astype(np.float32) / 255.0
+                targets = np.stack([p["target"] for p in self._train_pairs]).astype(np.float32) / 255.0
+                offsets = np.stack([p["offset" for p in self._train_pairs])
+                inputs = np.transpose(inputs, (0, 3, 1, 2))
+                targets = np.transpose(targets, (0, 3, 1, 2))
+
+                dataset = TensorDataset(
+                    torch.tensor(inputs), torch.tensor(targets), torch.tensor(offsets)
+                )
+                loader = DataLoader(dataset, batch_size=32, shuffle=True)
+
+                model = GazeCorrectionNet(in_channels=3, offset_dim=2)
+                optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+                loss_fn = nn.L1Loss()
+
+                model.train()
+                for epoch in range(20):
+                    for batch_in, batch_tgt, batch_off in loader:
+                        pred = model(batch_in, batch_off)
+                        loss = loss_fn(pred, batch_tgt)
+                        optimizer.zero_grad()
+                        loss.backward()
+                        optimizer.step()
+
+                # Save model
+                os.makedirs("models", exist_ok=True)
+                torch.save({
+                    "model_state_dict": model.state_dict(),
+                    "input_shape": (3, 64, 64),
+                    "offset_dim": 2,
+                }, "models/gaze_correction.pth")
+
+                # Signal completion on main thread
+                from PyQt6.QtCore import QTimer
+                QTimer.singleShot(0, self._train_complete)
+            except Exception as e:
+                print(f"[Train] Error: {e}")
+                from PyQt6.QtCore import QTimer
+                QTimer.singleShot(0, lambda: self.control_panel.set_train_status(f"Error: {str(e)[:50]}"))
+                QTimer.singleShot(0, lambda: setattr(self, '_training_active', False))
+                QTimer.singleShot(0, lambda: self.control_panel.train_btn.setText("Train Model"))
+
+        threading.Thread(target=train_thread, daemon=True).start()
+
+    def _train_complete(self):
+        """Model training complete — reload it."""
+        self._training_active = False
+        self.control_panel.train_btn.setText("Train Model")
+        self.control_panel.set_train_status("Model trained!")
+
+        # Reload neural corrector
+        model_path = os.path.join(os.path.dirname(__file__), '..', 'models', 'gaze_correction.pth')
+        if HAS_NEURAL and os.path.exists(model_path):
+            try:
+                self._neural_corrector = NeuralCorrector(model_path)
+                self._use_neural = True
+                # Re-add Neural option to combo
+                if self.control_panel.mode_combo.count() < 2:
+                    self.control_panel.mode_combo.addItem("Neural (Best)")
+                self.control_panel.set_train_status("Neural mode enabled!")
+                print("[Train] Neural model loaded successfully")
+            except Exception as e:
+                print(f"[Train] Could not load model: {e}")
 
     def _on_mode_changed(self, index):
         self._use_neural = (index == 1 and self._neural_corrector is not None)

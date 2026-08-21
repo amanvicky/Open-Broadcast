@@ -19,7 +19,7 @@ FEATHER_FRAC = 0.35
 class EyeCorrector:
     """Transplant iris to eye center with temporal smoothing."""
 
-    def __init__(self, strength=0.85, max_shift=20.0, smoothing=0.6,
+    def __init__(self, strength=0.85, max_shift=40.0, smoothing=0.6,
                  amplification=1.0, **_kwargs):
         self._strength = float(np.clip(strength, 0.0, 1.0))
         self._max_shift = float(max(0.0, max_shift))
