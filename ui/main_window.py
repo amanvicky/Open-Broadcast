@@ -2,6 +2,7 @@
 
 import cv2
 import numpy as np
+from collections import deque
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout,
     QMessageBox, QSplitter
@@ -68,6 +69,15 @@ class MainWindow(QMainWindow):
         self._training_active = False
         self._train_pairs = []
 
+        # Temporal consistency buffer (blend last N frames to reduce flicker)
+        self._temporal_buffer = deque(maxlen=5)
+        self._temporal_weights = np.array([0.05, 0.05, 0.1, 0.2, 0.6])  # newest=0.6
+
+        # Recording
+        self._recording = False
+        self._recording_writer = None
+        self._recording_path = None
+
         # Try to load neural model
         model_path = os.path.join(os.path.dirname(__file__), '..', 'models', 'gaze_correction.pth')
         if HAS_NEURAL and os.path.exists(model_path):
@@ -123,6 +133,7 @@ class MainWindow(QMainWindow):
         self.control_panel.virtual_cam_toggled.connect(self._on_virtual_cam_toggled)
         self.control_panel.mode_changed.connect(self._on_mode_changed)
         self.control_panel.train_clicked.connect(self._on_train_clicked)
+        self.control_panel.record_toggled.connect(self._on_record_toggled)
 
         # Remove neural option if model not loaded
         if not self._use_neural:
@@ -276,6 +287,26 @@ class MainWindow(QMainWindow):
             avg_x = (left["offset_x"] + right["offset_x"]) / 2
             avg_y = (left["offset_y"] + right["offset_y"]) / 2
             self._auto_cal_samples.append((avg_x, avg_y))
+
+        # Temporal consistency: blend with previous frames to reduce flicker
+        if self.correction_enabled and not eye_data["is_blinking"]:
+            self._temporal_buffer.append(display_frame.copy())
+            if len(self._temporal_buffer) >= 3:
+                weights = self._temporal_weights[-len(self._temporal_buffer):]
+                weights = weights / weights.sum()  # normalize
+                blended = np.zeros_like(display_frame, dtype=np.float32)
+                for i, buf_frame in enumerate(self._temporal_buffer):
+                    blended += buf_frame.astype(np.float32) * weights[i]
+                display_frame = np.clip(blended, 0, 255).astype(np.uint8)
+        else:
+            self._temporal_buffer.clear()
+
+        # Recording: write frame to file
+        if self._recording and self._recording_writer is not None:
+            try:
+                self._recording_writer.write(display_frame)
+            except Exception:
+                pass
 
         # Virtual camera output
         if self._virtcam_active and self._virtcam_writer is not None:
@@ -711,6 +742,11 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self._online_pairs = []
+        # Stop recording if active
+        if self._recording and self._recording_writer:
+            self._recording_writer.release()
+            self._recording_writer = None
+            self._recording = False
         if hasattr(self, "camera_thread") and self.camera_thread:
             self.camera_thread.stop()
         self.face_detector.cleanup()
@@ -743,6 +779,37 @@ class MainWindow(QMainWindow):
                 self._virtcam_writer = None
             self.control_panel.set_virtcam_status("")
 
+    def _on_record_toggled(self, active):
+        """Start/stop recording corrected video to file."""
+        if active:
+            import time
+            os.makedirs("recordings", exist_ok=True)
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            self._recording_path = os.path.join("recordings", f"corrected_{timestamp}.avi")
+            h, w = 480, 640
+            fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+            self._recording_writer = cv2.VideoWriter(
+                self._recording_path, fourcc, 30.0, (w, h)
+            )
+            if self._recording_writer.isOpened():
+                self._recording = True
+                self.control_panel.record_btn.setText("Stop Recording")
+                self.control_panel.record_btn.setChecked(True)
+                self.control_panel.set_record_status(f"Recording: {self._recording_path}")
+            else:
+                self._recording_writer = None
+                self.control_panel.record_btn.setChecked(False)
+                self.control_panel.set_record_status("Failed to open file")
+        else:
+            self._recording = False
+            if self._recording_writer:
+                self._recording_writer.release()
+                self._recording_writer = None
+            self.control_panel.record_btn.setText("Record Corrected Video")
+            self.control_panel.set_record_status(
+                f"Saved: {self._recording_path}" if self._recording_path else ""
+            )
+
     def _setup_shortcuts(self):
         """Add keyboard shortcuts for power users."""
         from PyQt6.QtGui import QShortcut, QKeySequence
@@ -751,6 +818,7 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("C"), self, self._toggle_compare)
         QShortcut(QKeySequence("L"), self, self._toggle_landmarks)
         QShortcut(QKeySequence("T"), self, self._on_train_clicked)
+        QShortcut(QKeySequence("R"), self, self._toggle_record)
         QShortcut(QKeySequence("1"), self, lambda: self._load_preset(0))
         QShortcut(QKeySequence("2"), self, lambda: self._load_preset(1))
         QShortcut(QKeySequence("3"), self, lambda: self._load_preset(2))
@@ -772,6 +840,11 @@ class MainWindow(QMainWindow):
     def _toggle_landmarks(self):
         self.show_landmarks = not self.show_landmarks
         self.control_panel.landmarks_cb.setChecked(self.show_landmarks)
+
+    def _toggle_record(self):
+        checked = not self.control_panel.record_btn.isChecked()
+        self.control_panel.record_btn.setChecked(checked)
+        self._on_record_toggled(checked)
 
     def _setup_presets(self):
         """Load presets from config."""

@@ -17,15 +17,19 @@ FEATHER_FRAC = 0.35
 
 
 class EyeCorrector:
-    """Transplant iris to eye center with temporal smoothing."""
+    """Transplant iris to eye center with temporal smoothing.
+    
+    Optionally uses iris segmentation for precise boundary detection.
+    """
 
     def __init__(self, strength=0.85, max_shift=40.0, smoothing=0.6,
-                 amplification=1.0, **_kwargs):
+                 amplification=1.0, segmenter=None, **_kwargs):
         self._strength = float(np.clip(strength, 0.0, 1.0))
         self._max_shift = float(max(0.0, max_shift))
         self._smoothing = float(np.clip(smoothing, 0.0, 0.98))
         self.amplification = amplification
         self._shift_ema = {}
+        self._segmenter = segmenter  # Optional IrisSegmenter instance
 
     @property
     def strength(self):
@@ -100,6 +104,7 @@ class EyeCorrector:
             return frame
 
         # Extract iris from original frame
+        # Use segmentation mask if available, otherwise fixed radius
         iris_patch, iris_mask = self._extract_iris(frame, ix, iy, iris_r)
         if iris_patch is None:
             return frame

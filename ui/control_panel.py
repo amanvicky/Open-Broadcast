@@ -18,6 +18,7 @@ class ControlPanel(QWidget):
     mode_changed = pyqtSignal(int)
     wizard_clicked = pyqtSignal()
     train_clicked = pyqtSignal()
+    record_toggled = pyqtSignal(bool)
     camera_changed = pyqtSignal(int)
     camera_restart = pyqtSignal()
 
@@ -193,6 +194,26 @@ class ControlPanel(QWidget):
 
         cl.addWidget(vg)
 
+        # Recording group (collapsible)
+        rg = QGroupBox("Recording")
+        rg.setCheckable(True)
+        rg.setChecked(False)
+        rg.toggled.connect(lambda checked: self._toggle_group(rg, checked))
+        rgl = QVBoxLayout(rg)
+
+        self.record_btn = QPushButton("Record Corrected Video")
+        self.record_btn.setObjectName("record_btn")
+        self.record_btn.setCheckable(True)
+        self.record_btn.setToolTip("Save corrected video to file (press R)")
+        self.record_btn.clicked.connect(self._on_record)
+        rgl.addWidget(self.record_btn)
+
+        self.record_status = QLabel("")
+        self.record_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        rgl.addWidget(self.record_status)
+
+        cl.addWidget(rg)
+
         # Training group (collapsible)
         tg = QGroupBox("Neural Training")
         tg.setCheckable(True)
@@ -240,6 +261,13 @@ class ControlPanel(QWidget):
 
     def set_train_status(self, text):
         self.train_status.setText(text)
+
+    def _on_record(self, checked):
+        self.record_btn.setText("Stop Recording" if checked else "Record Corrected Video")
+        self.record_toggled.emit(checked)
+
+    def set_record_status(self, text):
+        self.record_status.setText(text)
 
     def set_mode_available(self, index, available):
         """Enable/disable a mode option."""
