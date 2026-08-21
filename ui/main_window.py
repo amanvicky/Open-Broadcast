@@ -2,7 +2,6 @@
 
 import cv2
 import numpy as np
-from collections import deque
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout,
     QMessageBox, QSplitter
@@ -69,9 +68,8 @@ class MainWindow(QMainWindow):
         self._training_active = False
         self._train_pairs = []
 
-        # Temporal consistency buffer (blend last N frames to reduce flicker)
-        self._temporal_buffer = deque(maxlen=5)
-        self._temporal_weights = np.array([0.05, 0.05, 0.1, 0.2, 0.6])  # newest=0.6
+        # Temporal consistency: previous frame for lightweight blending
+        self._prev_corrected = None
 
         # Recording
         self._recording = False
@@ -288,18 +286,16 @@ class MainWindow(QMainWindow):
             avg_y = (left["offset_y"] + right["offset_y"]) / 2
             self._auto_cal_samples.append((avg_x, avg_y))
 
-        # Temporal consistency: blend with previous frames to reduce flicker
+        # Temporal consistency: blend current frame with previous to reduce flicker
+        # Lightweight: just blend 70/30 with previous frame (no buffer)
         if self.correction_enabled and not eye_data["is_blinking"]:
-            self._temporal_buffer.append(display_frame.copy())
-            if len(self._temporal_buffer) >= 3:
-                weights = self._temporal_weights[-len(self._temporal_buffer):]
-                weights = weights / weights.sum()  # normalize
-                blended = np.zeros_like(display_frame, dtype=np.float32)
-                for i, buf_frame in enumerate(self._temporal_buffer):
-                    blended += buf_frame.astype(np.float32) * weights[i]
-                display_frame = np.clip(blended, 0, 255).astype(np.uint8)
+            if self._prev_corrected is not None:
+                # Only blend if frame shape matches
+                if self._prev_corrected.shape == display_frame.shape:
+                    cv2.addWeighted(display_frame, 0.7, self._prev_corrected, 0.3, 0, display_frame)
+            self._prev_corrected = display_frame.copy()
         else:
-            self._temporal_buffer.clear()
+            self._prev_corrected = None
 
         # Recording: write frame to file
         if self._recording and self._recording_writer is not None:

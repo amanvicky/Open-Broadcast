@@ -67,6 +67,15 @@ class EyeCorrector:
         # Raw shift from current iris position to target
         raw_shift = (anchor - pupil) * self._strength * self.amplification
 
+        # Clamp paste position to stay within the eye socket
+        # The iris should never be placed more than 40% of eye width from center
+        new_pos = pupil + raw_shift
+        offset_from_center = new_pos - socket
+        max_offset = eye_width * 0.4
+        dist_from_center = float(np.linalg.norm(offset_from_center))
+        if dist_from_center > max_offset and dist_from_center > 0:
+            raw_shift = raw_shift * (max_offset / dist_from_center)
+
         # Minimum visibility: force shift to be at least 3px
         raw_norm = float(np.linalg.norm(raw_shift))
         if 0.01 < raw_norm < 3.0:
