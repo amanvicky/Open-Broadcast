@@ -9,10 +9,16 @@ When you're on a video call and reading notes or looking at a second screen, Ope
 - **Real-time eye gaze correction** — makes eyes appear to look straight at camera
 - **Works on low-end PCs** — no GPU required, runs on CPU at 30fps
 - **Two correction modes** — Geometric (fastest) or Neural (best)
+- **Iris position overlay** — red/green dots + shift arrow show exactly what's happening
 - **Face landmark overlay** — visualize detected eye positions
-- **Gaze calibration** — calibrate to your specific eye position
+- **Interactive calibration wizard** — 8-point guided calibration with moving dot
+- **Auto-calibration** — silently calibrates during first 3 seconds of use
+- **Keyboard shortcuts** — Space, C, L, T, S, 1-5, Esc for power users
+- **Preset system** — save/load 5 different configurations for different use cases
+- **Online learning** — model continuously improves while app runs
 - **Virtual camera output** — use with Zoom, Teams, OBS, etc.
 - **Static image testing** — test correction on photos without a webcam
+- **Large-scale data pipeline** — download 300K+ face images for training
 - **Dark theme UI** — professional broadcast-style interface
 
 ## Quick Start
@@ -34,10 +40,22 @@ python main.py
 
 1. **Camera starts automatically** — you'll see your webcam feed
 2. **Correction is enabled by default** — eyes should appear centered
-3. **Enable Compare mode** — checkbox shows original vs corrected side-by-side
-4. **Adjust strength** — use the slider (0-100%)
-5. **Adjust amplification** — multiplier for correction shift (1.0x-5.0x)
-6. **Calibrate** — click "Calibrate Gaze", look at camera for 2 seconds, click Stop
+3. **Auto-calibration** — waits 3 seconds, then calibrates silently
+4. **Enable Compare mode** — checkbox shows original vs corrected side-by-side
+5. **Adjust strength** — use the slider (0-100%)
+6. **Adjust amplification** — multiplier for correction shift (1.0x-5.0x)
+
+### Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| **Space** | Toggle correction ON/OFF |
+| **C** | Toggle compare mode |
+| **L** | Toggle face landmarks |
+| **T** | Start/stop training |
+| **S** | Save current settings as preset 1 |
+| **1-5** | Load preset 1-5 |
+| **Esc** | Quit app |
 
 ### Controls
 
@@ -45,10 +63,25 @@ python main.py
 |---------|-------------|
 | Correction Strength | 0-100% — how much to correct gaze |
 | Correction Amplification | 1.0x-5.0x — multiplier for correction shift |
+| Compare: Original vs Corrected | Side-by-side split view |
 | Show Face Landmarks | Display detected eye landmarks overlay |
 | Performance Mode | Geometric (Fastest) or Neural (Best) |
 | Calibrate Gaze | Calibrate to your eye position |
+| Interactive Calibration | 8-point guided wizard with moving dot |
 | Virtual Camera | Output corrected video to OBS/Zoom/Teams |
+| Train Model | Collect data + train neural model in-app |
+
+### Presets
+
+| Preset | Strength | Amplification | Use Case |
+|--------|----------|---------------|----------|
+| 1. Zoom Call | 85% | 3.0x | Video meetings |
+| 2. Streaming | 100% | 5.0x | Live streaming |
+| 3. Recording | 90% | 4.0x | Video recording |
+| 4. Subtle | 50% | 2.0x | Minimal correction |
+| 5. Maximum | 100% | 5.0x | Maximum correction |
+
+Press **1-5** to load, **S** to save current settings to slot 1.
 
 ### Test on Static Image
 
@@ -60,21 +93,12 @@ python main.py --test-image photo.jpg --output result.jpg
 python main.py --test-image photo.jpg --strength 0.9 --amplification 5.0
 ```
 
-## Correction Modes
+## Training the Neural Model
 
-### Geometric (Fastest)
-
-Default mode. Uses iris transplant — extracts the iris and pastes it at the eye center with feathered blending. No model needed, runs at <2ms per frame.
-
-### Neural (Best)
-
-Optional mode. Uses a trained U-Net (~300K parameters) that generates corrected eye patches. Produces more natural results at small gaze offsets.
-
-#### Training the Neural Model
+### Quick Training (from webcam)
 
 ```bash
-# Step 1: Collect training data from webcam
-# Move your head around for 2 minutes to capture variety
+# Step 1: Collect training data (2 minutes)
 python train.py --collect
 
 # Step 2: Train the model (~5 minutes on CPU)
@@ -84,12 +108,49 @@ python train.py --train --epochs 50
 python main.py
 ```
 
-Or collect from a video file:
+### Guided Training (better data quality)
 
 ```bash
-python train.py --collect --video path/to/video.mp4
-python train.py --train --epochs 50
+# Collects data in 8 directions for balanced training
+python train.py --guided
+
+# Train with more epochs for better results
+python train.py --train --epochs 100
 ```
+
+### Large-Scale Training (best quality)
+
+```bash
+# Step 1: Download 300K+ face images (~5GB)
+python -m data.download_datasets --all
+
+# Step 2: Generate 100K+ training pairs (~10GB)
+python -m data.large_scale_generator --input data/raw --target-count 100000
+
+# Step 3: Train the model (~30 minutes on CPU)
+python train.py --train --data data/large_pairs.npz --epochs 100
+
+# Step 4: Run the app with neural correction
+python main.py
+```
+
+### In-App Training
+
+1. Run `python main.py`
+2. Click **"Train Model"** in Neural Training group
+3. Follow the guided directions (~20 seconds)
+4. Training runs automatically (~30 seconds)
+5. "Neural (Best)" appears in Performance Mode dropdown
+
+## Online Learning
+
+The app continuously improves while running:
+
+- Collects 1 training pair per second in background
+- Auto fine-tunes model every 500 pairs (5 epochs)
+- Keeps max 2000 pairs buffer (most recent)
+- Model improves continuously while app runs
+- Reloads neural model automatically after fine-tune
 
 ## Project Structure
 
@@ -113,6 +174,9 @@ openbroadcast/
 │   └── styles.py            # Dark theme
 ├── utils/
 │   └── performance.py       # FPS counter
+├── data/
+│   ├── download_datasets.py # Download academic face datasets
+│   └── large_scale_generator.py # Generate training pairs
 └── models/
     └── gaze_correction.pth  # Trained neural model (after training)
 ```
@@ -133,7 +197,7 @@ cv2      MediaPipe      Geometric      Iris transplant  PyQt6
 1. MediaPipe detects 468 face landmarks + 10 iris landmarks (5 per eye)
 2. Iris center position is measured relative to eye corners
 3. Offset from eye center = gaze direction
-4. Head pose is NOT subtracted (unreliable with current landmarks)
+4. Temporal smoothing reduces landmark jitter across frames
 
 ### Eye Correction (Geometric)
 
@@ -148,6 +212,14 @@ cv2      MediaPipe      Geometric      Iris transplant  PyQt6
 2. Feed patch + offset vector through U-Net
 3. Model predicts corrected eye patch
 4. Blend result back into frame with feathered mask
+
+### Iris Position Overlay
+
+- **Red dot**: current iris position
+- **Green dot**: target position (where iris will be moved)
+- **Yellow arrow**: shift vector with pixel count (e.g., "30px")
+
+Shows on the preview when correction is active, making the correction visible even at small offsets.
 
 ## Requirements
 
@@ -173,6 +245,26 @@ All of the above plus:
 | Latency | <2ms | ~5ms |
 | Model size | 0 MB | 1.2 MB |
 | RAM usage | ~50 MB | ~200 MB |
+
+## Troubleshooting
+
+### "Looking away" when looking at camera
+- Run **Interactive Calibration** to calibrate to your eye position
+- Increase **Correction Amplification** to 4.0x-5.0x
+
+### Correction not visible
+- Enable **Compare: Original vs Corrected** to see side-by-side
+- Check the **iris overlay** (red/green dots) to see shift amount
+- Increase **Correction Strength** to 100%
+
+### Low FPS
+- Close other applications using camera
+- Use **Geometric (Fastest)** mode
+- Reduce camera resolution in settings
+
+### Neural model not available
+- Click **"Train Model"** in the app, or
+- Run `python train.py --collect` then `python train.py --train`
 
 ## License
 
