@@ -2,6 +2,10 @@
 
 **Real-time eye gaze correction that works without a GPU.**
 
+> **Repo slimmed (Nov 2026):** `data/iris_segments.npz` (~57 MB of webcam-collected training data)
+> is no longer in git history. Recreate it by running the collection step in `train_segmenter.py`
+> (it captures ~120 s of your own webcam), then train with `train_segmenter.py`.
+
 When you're on a video call and reading notes or looking at a second screen, OpenBroadcast corrects your eye gaze in real-time so it appears you're looking straight at the camera.
 
 ## Features
